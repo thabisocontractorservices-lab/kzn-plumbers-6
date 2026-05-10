@@ -10,6 +10,7 @@
     "clean:test-users": "node scripts/clean-test-users.mjs"
   },
   "dependencies": {
+    "@next/third-parties": "15.1.11",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.45.4",
     "clsx": "^2.1.1",
