@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DM_Sans, Playfair_Display } from "next/font/google";
+import { GoogleAnalytics } from "@next/third-parties/google";
 import "./globals.css";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
@@ -40,6 +41,11 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // GA4 only loads in production AND when NEXT_PUBLIC_GA_ID is set.
+  // This keeps preview/dev deployments out of your analytics data.
+  const gaId = process.env.NEXT_PUBLIC_GA_ID;
+  const enableGA = process.env.NODE_ENV === "production" && !!gaId;
+
   return (
     <html lang="en" className={`${dmSans.variable} ${playfair.variable}`}>
       <body className="min-h-screen flex flex-col">
@@ -48,6 +54,7 @@ export default function RootLayout({
         <Footer />
         {process.env.NODE_ENV === "development" && <AuthDebug />}
       </body>
+      {enableGA && <GoogleAnalytics gaId={gaId!} />}
     </html>
   );
 }
