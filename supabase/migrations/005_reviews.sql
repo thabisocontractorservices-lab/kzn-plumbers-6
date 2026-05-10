@@ -31,8 +31,11 @@ create table public.google_reviews (
 create index google_reviews_plumber_idx on public.google_reviews(plumber_id);
 create index google_reviews_time_idx on public.google_reviews(review_time desc);
 
--- Aggregate view: combined platform + Google rating per plumber
-create or replace view public.plumber_ratings as
+-- Aggregate view: combined platform + Google rating per plumber.
+-- Use security_invoker so the view respects RLS of the calling user
+-- instead of running as the view owner (which would bypass RLS).
+create or replace view public.plumber_ratings
+with (security_invoker = true) as
 select
   p.id as plumber_id,
   coalesce(p.google_rating, 0) as google_rating,

@@ -12,13 +12,15 @@ import { supabase } from "@/src/supabaseClient";
 
 const SEO_TABLE = "seo_pages";
 
+// faq_schema can come back as either a string (if column is text) or an
+// object (if column is jsonb). We handle both safely below.
 type SeoPage = {
   slug: string;
   h1: string;
   meta_title: string;
   meta_description: string;
   body_html: string;
-  faq_schema: string | null;
+  faq_schema: string | Record<string, unknown> | null;
   group_name: string | null;
   city_focus: string | null;
 };
@@ -114,11 +116,18 @@ export default async function SeoContentPage({
         dangerouslySetInnerHTML={{ __html: page.body_html }}
       />
 
-      {/* FAQ JSON-LD schema for Google rich results */}
+      {/* FAQ JSON-LD schema for Google rich results.
+          Stringify if it's a parsed object (jsonb column) — otherwise
+          React would emit "[object Object]" and break structured data. */}
       {page.faq_schema && (
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: page.faq_schema }}
+          dangerouslySetInnerHTML={{
+            __html:
+              typeof page.faq_schema === "string"
+                ? page.faq_schema
+                : JSON.stringify(page.faq_schema),
+          }}
         />
       )}
 
