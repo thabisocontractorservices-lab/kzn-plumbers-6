@@ -14,8 +14,11 @@ const FILTERS = [
 const AREAS = [
   { key: "durban", label: "Durban", match: ["Durban North", "Durban South", "Pinetown"] },
   { key: "pmb", label: "PMB", match: ["PMB"] },
+  { key: "ballito", label: "Ballito / North Coast", match: ["Ballito"] },
   { key: "richardsbay", label: "Richards Bay", match: ["Richards Bay"] },
   { key: "newcastle", label: "Newcastle", match: ["Newcastle"] },
+  { key: "southcoast", label: "South Coast", match: ["South Coast"] },
+  { key: "other", label: "Other KZN", match: ["Other KZN"] },
 ] as const;
 
 type SortKey = "rated" | "price" | "name";
@@ -57,7 +60,12 @@ export function DirectoryClient({
     if (sort === "rated") {
       r.sort((a, b) => (b.google_rating ?? 0) - (a.google_rating ?? 0));
     } else if (sort === "price") {
-      r.sort((a, b) => a.hourly_rate - b.hourly_rate);
+      // Plumbers without a published rate sort to the end
+      r.sort((a, b) => {
+        const ar = a.hourly_rate ?? Number.POSITIVE_INFINITY;
+        const br = b.hourly_rate ?? Number.POSITIVE_INFINITY;
+        return ar - br;
+      });
     } else if (sort === "name") {
       r.sort((a, b) => a.trading_name.localeCompare(b.trading_name));
     }

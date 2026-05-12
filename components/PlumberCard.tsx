@@ -86,10 +86,18 @@ export function PlumberCard({ plumber }: { plumber: Plumber }) {
 
       <div className="mt-auto flex flex-col gap-2.5">
         <div className="flex items-baseline gap-1">
-          <span className="font-display text-xl font-bold text-gray-900">
-            {formatRand(plumber.hourly_rate)}
-          </span>
-          <span className="text-xs text-gray-500">/hour · callout extra</span>
+          {plumber.hourly_rate ? (
+            <>
+              <span className="font-display text-xl font-bold text-gray-900">
+                {formatRand(plumber.hourly_rate)}
+              </span>
+              <span className="text-xs text-gray-500">/hour · callout extra</span>
+            </>
+          ) : (
+            <span className="font-display text-base font-semibold text-gray-700">
+              Contact for quote
+            </span>
+          )}
         </div>
         <div className="grid grid-cols-3 gap-1.5">
           <a

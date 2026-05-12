@@ -89,7 +89,10 @@ export default async function PlumberPage({
             <div>
               <h1 className="font-display text-4xl mb-1">{plumber.trading_name}</h1>
               <div className="opacity-90 mb-3">
-                📍 {plumber.area} · {formatRand(plumber.hourly_rate)}/hr
+                📍 {plumber.area}
+                {plumber.hourly_rate
+                  ? ` · ${formatRand(plumber.hourly_rate)}/hr`
+                  : " · Contact for quote"}
                 {plumber.pirb_number && ` · ${plumber.pirb_number}`}
               </div>
               <div className="flex flex-wrap gap-1.5">

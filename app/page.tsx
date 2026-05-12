@@ -27,9 +27,28 @@ export default async function HomePage({
     console.error("Failed to load plumbers:", error);
   }
 
+  // Compute REAL hero stats from the actual database — no hardcoded numbers
+  const all = plumbers ?? [];
+  const totalCount = all.length;
+  const regionsCount = new Set(all.map((p) => p.area)).size;
+  const ratedPlumbers = all.filter(
+    (p) => typeof p.google_rating === "number" && p.google_rating > 0,
+  );
+  const avgRating =
+    ratedPlumbers.length > 0
+      ? ratedPlumbers.reduce((sum, p) => sum + (p.google_rating ?? 0), 0) /
+        ratedPlumbers.length
+      : null;
+  const emergencyCount = all.filter((p) => p.is_emergency).length;
+
   return (
     <>
-      <Hero />
+      <Hero
+        totalCount={totalCount}
+        regionsCount={regionsCount}
+        avgRating={avgRating}
+        emergencyCount={emergencyCount}
+      />
       <DirectoryClient
         initialPlumbers={(plumbers ?? []) as unknown as Plumber[]}
         initialQuery={params.q ?? ""}
@@ -38,7 +57,17 @@ export default async function HomePage({
   );
 }
 
-function Hero() {
+function Hero({
+  totalCount,
+  regionsCount,
+  avgRating,
+  emergencyCount,
+}: {
+  totalCount: number;
+  regionsCount: number;
+  avgRating: number | null;
+  emergencyCount: number;
+}) {
   return (
     <section className="relative overflow-hidden bg-gradient-to-br from-brand to-brand-dark text-white py-20 px-6 text-center">
       <div className="relative z-10 max-w-3xl mx-auto">
@@ -63,10 +92,22 @@ function Hero() {
         </form>
         <div className="flex justify-center gap-10 mt-10 flex-wrap">
           {[
-            { num: "112", label: "Verified Plumbers" },
-            { num: "8", label: "KZN Regions" },
-            { num: "4.7★", label: "Avg. Rating" },
-            { num: "24/7", label: "Emergency Cover" },
+            {
+              num: totalCount.toLocaleString(),
+              label: "Verified Plumbers",
+            },
+            {
+              num: regionsCount.toString(),
+              label: "KZN Regions",
+            },
+            {
+              num: avgRating ? `${avgRating.toFixed(1)}★` : "—",
+              label: "Avg. Rating",
+            },
+            {
+              num: emergencyCount.toLocaleString(),
+              label: "24/7 Emergency",
+            },
           ].map((s) => (
             <div key={s.label} className="text-center">
               <div className="font-display text-2xl font-bold">{s.num}</div>

@@ -31,7 +31,7 @@ export type Database = {
           trading_name: string;
           slug: string | null;
           area: string;
-          hourly_rate: number;
+          hourly_rate: number | null;
           about: string | null;
           specialties: string[];
           is_emergency: boolean;

@@ -5,11 +5,11 @@ create type public.availability_status as enum ('available', 'busy', 'unavailabl
 
 create table public.plumbers (
   id                    uuid primary key default gen_random_uuid(),
-  profile_id            uuid not null unique references public.profiles(id) on delete cascade,
+  profile_id            uuid unique references public.profiles(id) on delete cascade,  -- null = unclaimed directory listing managed by admins
   trading_name          text not null,
   slug                  text unique,
   area                  text not null,
-  hourly_rate           integer not null check (hourly_rate >= 0),
+  hourly_rate           integer check (hourly_rate is null or hourly_rate >= 0),  -- null = "Contact for quote"
   about                 text,
   specialties           text[] default array[]::text[],
   is_emergency          boolean not null default false,
