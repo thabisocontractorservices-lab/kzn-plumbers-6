@@ -25,10 +25,13 @@ export function PlumberCard({ plumber }: { plumber: Plumber }) {
   // support WhatsApp, so show a "Call" button instead.
   const landline = isLandline(plumber.whatsapp_number);
 
-  // Pre-filled WhatsApp message — short, brand-voice intro.
+  // Pre-filled WhatsApp message — brand voice with service + area context.
+  //   "Hi, I found [Business] on kznplumbers.co.za and would like to get a
+  //    quote for [Service] in [Area]."
+  const primaryService = (plumber.specialties?.[0] ?? "plumbing work").toLowerCase();
   const waLink = whatsAppLink(
     plumber.whatsapp_number,
-    `Hi, I found ${plumber.trading_name} on kznplumbers.co.za`,
+    `Hi, I found ${plumber.trading_name} on kznplumbers.co.za and would like to get a quote for ${primaryService} in ${plumber.area}.`,
   );
   const phoneLink = callLink(plumber.whatsapp_number);
 

@@ -84,14 +84,14 @@ export default async function PlumberPage({
   return (
     <>
       {/* Banner */}
-      <section className="bg-gradient-to-br from-brand to-brand-dark text-white py-12 px-6">
+      <section className="bg-gradient-to-br from-brand to-brand-dark text-white py-6 sm:py-12 px-4 sm:px-6">
         <div className="max-w-7xl mx-auto">
-          <a href="/" className="text-sm opacity-80 hover:opacity-100 underline">
+          <a href="/" className="text-xs sm:text-sm opacity-80 hover:opacity-100 underline">
             ← Back to directory
           </a>
-          <div className="flex gap-6 items-start mt-4">
+          <div className="flex gap-3 sm:gap-6 items-start mt-3 sm:mt-4">
             <div
-              className="w-24 h-24 rounded-2xl bg-white text-brand flex items-center justify-center font-display text-4xl font-bold shadow-floating shrink-0"
+              className="w-14 h-14 sm:w-24 sm:h-24 rounded-xl sm:rounded-2xl bg-white text-brand flex items-center justify-center font-display text-xl sm:text-4xl font-bold shadow-floating shrink-0"
               style={
                 profilePhoto
                   ? { backgroundImage: `url(${profilePhoto})`, backgroundSize: "cover" }
@@ -100,16 +100,18 @@ export default async function PlumberPage({
             >
               {!profilePhoto && initials(plumber.trading_name)}
             </div>
-            <div>
-              <h1 className="font-display text-4xl mb-1">{plumber.trading_name}</h1>
-              <div className="opacity-90 mb-3">
+            <div className="min-w-0 flex-1">
+              <h1 className="font-display text-xl sm:text-3xl md:text-4xl mb-1 leading-tight break-words">
+                {plumber.trading_name}
+              </h1>
+              <div className="opacity-90 mb-3 text-xs sm:text-base">
                 📍 {plumber.area}
                 {plumber.hourly_rate
                   ? ` · ${formatRand(plumber.hourly_rate)}/hr`
                   : " · Contact for quote"}
                 {plumber.pirb_number && ` · ${plumber.pirb_number}`}
               </div>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1 sm:gap-1.5">
                 {plumber.is_certified && (
                   <span className="badge bg-teal-light text-teal">✓ PIRB Certified</span>
                 )}
@@ -128,11 +130,13 @@ export default async function PlumberPage({
         </div>
       </section>
 
-      <div className="max-w-7xl mx-auto px-6 py-10 grid lg:grid-cols-[1fr_380px] gap-6">
-        <div className="space-y-5">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 grid lg:grid-cols-[1fr_380px] gap-4 sm:gap-6">
+        <div className="space-y-4 sm:space-y-5 min-w-0">
           {plumber.about && (
             <Panel title="About">
-              <p className="text-gray-700 leading-relaxed">{plumber.about}</p>
+              <p className="text-gray-700 leading-relaxed break-words overflow-wrap-anywhere">
+                {plumber.about}
+              </p>
             </Panel>
           )}
 
@@ -314,7 +318,7 @@ export default async function PlumberPage({
                   <a
                     href={whatsAppLink(
                       plumber.whatsapp_number,
-                      `Hi, I found ${plumber.trading_name} on kznplumbers.co.za`,
+                      `Hi, I found ${plumber.trading_name} on kznplumbers.co.za and would like to get a quote for ${(plumber.specialties?.[0] ?? "plumbing work").toString().toLowerCase()} in ${plumber.area}.`,
                     )}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -468,7 +472,7 @@ function Panel({
 }) {
   return (
     <section className="panel">
-      <h2 className="font-display text-xl font-bold mb-4 text-gray-900">
+      <h2 className="font-display text-lg sm:text-xl font-bold mb-3 sm:mb-4 text-gray-900">
         {title}
       </h2>
       {children}

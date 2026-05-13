@@ -33,7 +33,7 @@ h1, h2, h3, h4 {
     @apply btn bg-whatsapp text-white hover:bg-whatsapp-dark;
   }
   .panel {
-    @apply bg-white border border-gray-200 rounded-xl p-6;
+    @apply bg-white border border-gray-200 rounded-xl p-4 sm:p-6;
   }
   .badge {
     @apply inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide;
@@ -72,6 +72,8 @@ h1, h2, h3, h4 {
   line-height: 1.75;
   color: #374151;
   margin-bottom: 1.1rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .seo-content ul,
@@ -124,6 +126,13 @@ h1, h2, h3, h4 {
   width: 100%;
   border-collapse: collapse;
   margin-bottom: 1.5rem;
+}
+
+/* Utility — used in plumber profile About block where description may
+   contain long unbroken URLs / emails (e.g. https://my-very-long-website.com) */
+.overflow-wrap-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .seo-content th,
