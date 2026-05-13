@@ -19,12 +19,12 @@ export async function Navbar() {
 
   return (
     <nav className="bg-brand sticky top-0 z-40 shadow-md">
-      <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center text-xl">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
+        <Link href="/" className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="w-8 h-8 sm:w-9 sm:h-9 bg-white rounded-lg flex items-center justify-center text-lg sm:text-xl shrink-0">
             🔧
           </div>
-          <span className="text-white font-bold text-lg tracking-tight">
+          <span className="text-white font-bold text-base sm:text-lg tracking-tight truncate">
             KZN<span className="text-sky-300">Plumbers</span>
           </span>
         </Link>
@@ -62,14 +62,14 @@ export async function Navbar() {
           )}
         </div>
 
-        <div className="flex gap-2 items-center">
+        <div className="flex gap-1.5 sm:gap-2 items-center shrink-0">
           {user ? (
             <>
-              <span className="hidden sm:inline text-white/70 text-xs">
+              <span className="hidden md:inline text-white/70 text-xs">
                 {user.email}
               </span>
               <form action="/auth/signout" method="post">
-                <button className="text-white/90 border border-white/40 hover:bg-white/15 px-3 py-1.5 rounded-md text-sm font-semibold">
+                <button className="text-white/90 border border-white/40 hover:bg-white/15 px-2.5 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-semibold">
                   Logout
                 </button>
               </form>
@@ -78,13 +78,13 @@ export async function Navbar() {
             <>
               <Link
                 href="/login"
-                className="text-white/90 border border-white/40 hover:bg-white/15 px-3 py-1.5 rounded-md text-sm font-semibold"
+                className="text-white/90 border border-white/40 hover:bg-white/15 px-2.5 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-semibold"
               >
                 Login
               </Link>
               <Link
                 href="/register"
-                className="bg-white text-brand hover:bg-brand-light px-3 py-1.5 rounded-md text-sm font-semibold"
+                className="bg-white text-brand hover:bg-brand-light px-2.5 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-semibold whitespace-nowrap"
               >
                 List Free
               </Link>

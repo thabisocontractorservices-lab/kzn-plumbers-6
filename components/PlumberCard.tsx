@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { combinedRating, formatRand, initials, whatsAppLink } from "@/lib/utils";
+import {
+  callLink,
+  combinedRating,
+  formatRand,
+  initials,
+  isLandline,
+  whatsAppLink,
+} from "@/lib/utils";
 import type { Plumber } from "@/types/database";
 
 export function PlumberCard({ plumber }: { plumber: Plumber }) {
@@ -14,11 +21,16 @@ export function PlumberCard({ plumber }: { plumber: Plumber }) {
     ? "★".repeat(Math.round(r.rating)) + "☆".repeat(5 - Math.round(r.rating))
     : "—";
 
+  // Detect landline numbers (SA area codes 011/021/031 etc) — they don't
+  // support WhatsApp, so show a "Call" button instead.
+  const landline = isLandline(plumber.whatsapp_number);
+
   // Pre-filled WhatsApp message — short, brand-voice intro.
   const waLink = whatsAppLink(
     plumber.whatsapp_number,
     `Hi, I found ${plumber.trading_name} on kznplumbers.co.za`,
   );
+  const phoneLink = callLink(plumber.whatsapp_number);
 
   const availabilityClass = {
     available: "bg-green-100 text-green-800",
@@ -101,24 +113,36 @@ export function PlumberCard({ plumber }: { plumber: Plumber }) {
           )}
         </div>
         <div className="grid grid-cols-3 gap-1.5">
-          <a
-            href={waLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-whatsapp text-xs py-2"
-            onClick={(e) => e.stopPropagation()}
-          >
-            💬 WA
-          </a>
+          {landline ? (
+            <a
+              href={phoneLink}
+              className="btn-primary text-xs py-2 px-1"
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`Call ${plumber.trading_name}`}
+            >
+              📞 Call
+            </a>
+          ) : (
+            <a
+              href={waLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-whatsapp text-xs py-2 px-1"
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`WhatsApp ${plumber.trading_name}`}
+            >
+              💬 WhatsApp
+            </a>
+          )}
           <Link
             href={`/plumber/${plumber.slug ?? plumber.id}#book`}
-            className="btn-secondary text-xs py-2"
+            className="btn-secondary text-xs py-2 px-1"
           >
             Book
           </Link>
           <Link
             href={`/plumber/${plumber.slug ?? plumber.id}`}
-            className="btn-primary text-xs py-2"
+            className="btn-secondary text-xs py-2 px-1"
           >
             View
           </Link>

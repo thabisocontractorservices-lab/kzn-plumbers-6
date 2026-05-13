@@ -22,6 +22,26 @@ export function whatsAppLink(phone: string, text?: string): string {
   return `https://wa.me/${num}${txt}`;
 }
 
+/**
+ * SA mobile numbers (which support WhatsApp) start with 6, 7, or 8 after the
+ * country code. Landlines start with 1, 2, 3, 4, or 5 (area codes like 011,
+ * 021, 031, etc.). Returns true if the number is a landline → don't show
+ * the WhatsApp button for those.
+ */
+export function isLandline(phone: string): boolean {
+  const digits = formatWhatsApp(phone);
+  if (!digits || digits.length !== 11) return true; // unparseable → safest = treat as landline
+  if (!digits.startsWith("27")) return true;
+  const firstNational = digits.charAt(2);
+  return !["6", "7", "8"].includes(firstNational);
+}
+
+/** Build a tel: link for landline call buttons. */
+export function callLink(phone: string): string {
+  const num = formatWhatsApp(phone);
+  return `tel:+${num}`;
+}
+
 /** Combine Google + internal ratings into a single weighted average. */
 export function combinedRating(
   googleRating: number | null | undefined,

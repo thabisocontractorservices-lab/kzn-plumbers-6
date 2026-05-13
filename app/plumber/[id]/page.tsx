@@ -1,9 +1,11 @@
 import { supabase } from "@/src/supabaseClient";
 import { notFound } from "next/navigation";
 import {
+  callLink,
   combinedRating,
   formatRand,
   initials,
+  isLandline,
   whatsAppLink,
 } from "@/lib/utils";
 import { reviewUrl } from "@/lib/google/places";
@@ -299,20 +301,35 @@ export default async function PlumberPage({
         <aside className="space-y-5">
           <div id="book" className="panel sticky top-20">
             <div className="flex gap-2 mb-4">
-              <a
-                href={whatsAppLink(
-                  plumber.whatsapp_number,
-                  `Hi, I found ${plumber.trading_name} on kznplumbers.co.za`,
-                )}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-whatsapp flex-1"
-              >
-                💬 WhatsApp
-              </a>
-              <a href={`tel:${plumber.whatsapp_number}`} className="btn-secondary">
-                📞 Call
-              </a>
+              {isLandline(plumber.whatsapp_number) ? (
+                // Landline → Call only (WhatsApp won't work)
+                <a
+                  href={callLink(plumber.whatsapp_number)}
+                  className="btn-primary flex-1"
+                >
+                  📞 Call now
+                </a>
+              ) : (
+                <>
+                  <a
+                    href={whatsAppLink(
+                      plumber.whatsapp_number,
+                      `Hi, I found ${plumber.trading_name} on kznplumbers.co.za`,
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-whatsapp flex-1"
+                  >
+                    💬 WhatsApp
+                  </a>
+                  <a
+                    href={callLink(plumber.whatsapp_number)}
+                    className="btn-secondary"
+                  >
+                    📞 Call
+                  </a>
+                </>
+              )}
             </div>
 
             <h3 className="font-display text-lg font-bold mb-1">Book an Appointment</h3>

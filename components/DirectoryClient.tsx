@@ -74,10 +74,10 @@ export function DirectoryClient({
   }, [initialPlumbers, filter, areaFilter, query, sort]);
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-10">
-      <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6 shadow-sm flex flex-col gap-3">
-        <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-1">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
+      <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-5 mb-5 sm:mb-6 shadow-sm flex flex-col gap-3">
+        <div className="flex flex-wrap gap-1.5 sm:gap-2 items-center">
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-1 w-full sm:w-auto">
             Filter
           </span>
           {FILTERS.map((f) => (
@@ -154,7 +154,7 @@ function Chip({
   return (
     <button
       onClick={onClick}
-      className={`px-3.5 py-1.5 rounded-full border text-xs font-semibold transition-colors ${
+      className={`px-3 sm:px-3.5 py-1 sm:py-1.5 rounded-full border text-[11px] sm:text-xs font-semibold transition-colors whitespace-nowrap ${
         active
           ? "bg-brand text-white border-brand"
           : "bg-white text-gray-700 border-gray-200 hover:border-brand hover:text-brand"

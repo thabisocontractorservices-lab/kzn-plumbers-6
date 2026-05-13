@@ -132,49 +132,37 @@ function Hero({
   emergencyCount: number;
 }) {
   return (
-    <section className="relative overflow-hidden bg-gradient-to-br from-brand to-brand-dark text-white py-20 px-6 text-center">
+    <section className="relative overflow-hidden bg-gradient-to-br from-brand to-brand-dark text-white py-12 sm:py-20 px-4 sm:px-6 text-center">
       <div className="relative z-10 max-w-3xl mx-auto">
-        <h1 className="font-display text-4xl md:text-5xl font-extrabold mb-3">
+        <h1 className="font-display text-2xl sm:text-4xl md:text-5xl font-extrabold mb-3 leading-tight">
           Verified plumbers across <span className="text-sky-300 italic">KwaZulu-Natal</span>
         </h1>
-        <p className="text-lg opacity-90 mb-10 max-w-xl mx-auto">
+        <p className="text-sm sm:text-lg opacity-90 mb-6 sm:mb-10 max-w-xl mx-auto px-2">
           PIRB-registered tradespeople, real Google reviews, and instant WhatsApp booking — from Durban North to Richards Bay.
         </p>
         <form
           action="/"
-          className="flex max-w-xl mx-auto bg-white rounded-2xl overflow-hidden shadow-2xl"
+          className="flex max-w-xl mx-auto bg-white rounded-xl sm:rounded-2xl overflow-hidden shadow-2xl"
         >
           <input
             name="q"
-            placeholder="Search by name, area, or specialty (e.g. burst pipes, geyser repair)"
-            className="flex-1 px-5 py-4 text-gray-800 outline-none"
+            placeholder="Search by name, area, or specialty"
+            className="flex-1 px-4 sm:px-5 py-3 sm:py-4 text-sm sm:text-base text-gray-800 outline-none min-w-0"
           />
-          <button className="px-7 py-4 bg-brand text-white font-semibold hover:bg-brand-dark">
+          <button className="px-4 sm:px-7 py-3 sm:py-4 bg-brand text-white font-semibold hover:bg-brand-dark text-sm sm:text-base shrink-0">
             Search
           </button>
         </form>
-        <div className="flex justify-center gap-10 mt-10 flex-wrap">
+        <div className="grid grid-cols-2 sm:flex sm:justify-center gap-4 sm:gap-10 mt-8 sm:mt-10">
           {[
-            {
-              num: totalCount.toLocaleString(),
-              label: "Verified Plumbers",
-            },
-            {
-              num: regionsCount.toString(),
-              label: "KZN Regions",
-            },
-            {
-              num: avgRating ? `${avgRating.toFixed(1)}★` : "—",
-              label: "Avg. Rating",
-            },
-            {
-              num: emergencyCount.toLocaleString(),
-              label: "24/7 Emergency",
-            },
+            { num: totalCount.toLocaleString(), label: "Verified Plumbers" },
+            { num: regionsCount.toString(), label: "KZN Regions" },
+            { num: avgRating ? `${avgRating.toFixed(1)}★` : "—", label: "Avg. Rating" },
+            { num: emergencyCount.toLocaleString(), label: "24/7 Emergency" },
           ].map((s) => (
             <div key={s.label} className="text-center">
-              <div className="font-display text-2xl font-bold">{s.num}</div>
-              <div className="text-xs uppercase tracking-wider opacity-80">
+              <div className="font-display text-xl sm:text-2xl font-bold">{s.num}</div>
+              <div className="text-[10px] sm:text-xs uppercase tracking-wider opacity-80">
                 {s.label}
               </div>
             </div>
