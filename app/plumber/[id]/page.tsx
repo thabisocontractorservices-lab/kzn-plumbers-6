@@ -288,7 +288,10 @@ export default async function PlumberPage({
           <div id="book" className="panel sticky top-20">
             <div className="flex gap-2 mb-4">
               <a
-                href={whatsAppLink(plumber.whatsapp_number, `Hi, I'd like to enquire via KZN Plumbers Directory.`)}
+                href={whatsAppLink(
+                  plumber.whatsapp_number,
+                  `Hi, I found ${plumber.trading_name} on kznplumbers.co.za and would like to get a quote for ${(plumber.specialties?.[0] ?? "plumbing work").toLowerCase()} in ${plumber.area}.`,
+                )}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn-whatsapp flex-1"

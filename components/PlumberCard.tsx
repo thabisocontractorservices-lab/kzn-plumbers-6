@@ -14,9 +14,13 @@ export function PlumberCard({ plumber }: { plumber: Plumber }) {
     ? "★".repeat(Math.round(r.rating)) + "☆".repeat(5 - Math.round(r.rating))
     : "—";
 
+  // Build a pre-filled WhatsApp message in the brand voice:
+  //   "Hi, I found [Business Name] on kznplumbers.co.za and would like to get a quote
+  //    for [Service] in [Area]."
+  const primaryService = plumber.specialties?.[0] ?? "plumbing work";
   const waLink = whatsAppLink(
     plumber.whatsapp_number,
-    `Hi ${plumber.trading_name.split(" ")[0]}, I found you on KZN Plumbers Directory and would like to enquire about your services.`,
+    `Hi, I found ${plumber.trading_name} on kznplumbers.co.za and would like to get a quote for ${primaryService.toLowerCase()} in ${plumber.area}.`,
   );
 
   const availabilityClass = {
