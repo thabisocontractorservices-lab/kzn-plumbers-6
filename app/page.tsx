@@ -1,8 +1,17 @@
+import Link from "next/link";
 import { supabase } from "@/src/supabaseClient";
 import { DirectoryClient } from "@/components/DirectoryClient";
 import type { Plumber } from "@/types/database";
 
 export const revalidate = 60; // ISR: refresh every minute
+
+type PopularGuide = {
+  slug: string;
+  h1: string;
+  meta_description: string;
+  city_focus: string | null;
+  group_name: string | null;
+};
 
 export default async function HomePage({
   searchParams,
@@ -26,6 +35,16 @@ export default async function HomePage({
   if (error) {
     console.error("Failed to load plumbers:", error);
   }
+
+  // Pull a balanced selection of popular SEO pages for the "Popular guides" section.
+  // Prefer high-commercial-intent slugs targeting the major cities.
+  const { data: popularGuidesData } = await supabase
+    .from("seo_pages")
+    .select("slug, h1, meta_description, city_focus, group_name")
+    .eq("published", true)
+    .in("city_focus", ["Durban", "Pietermaritzburg", "Umhlanga", "Ballito", "Pinetown", "Richards Bay"])
+    .limit(12);
+  const popularGuides: PopularGuide[] = (popularGuidesData ?? []) as PopularGuide[];
 
   // Compute REAL hero stats from the actual database — no hardcoded numbers
   const all = plumbers ?? [];
@@ -53,7 +72,51 @@ export default async function HomePage({
         initialPlumbers={(plumbers ?? []) as unknown as Plumber[]}
         initialQuery={params.q ?? ""}
       />
+      {popularGuides.length > 0 && <PopularGuides guides={popularGuides} />}
     </>
+  );
+}
+
+function PopularGuides({ guides }: { guides: PopularGuide[] }) {
+  return (
+    <section className="bg-white border-t border-gray-200 py-12 px-6">
+      <div className="max-w-6xl mx-auto">
+        <div className="flex items-end justify-between mb-6">
+          <div>
+            <h2 className="font-display text-2xl md:text-3xl font-extrabold text-gray-900">
+              Popular plumbing guides
+            </h2>
+            <p className="text-gray-600 text-sm mt-1">
+              Real answers to KZN's most-searched plumbing questions — from emergency repairs to compliance certificates.
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {guides.map((g) => (
+            <Link
+              key={g.slug}
+              href={`/${g.slug}`}
+              className="block bg-white border border-gray-200 rounded-xl p-5 hover:border-brand hover:shadow-md transition-all group"
+            >
+              {g.city_focus && (
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-brand mb-2">
+                  📍 {g.city_focus}
+                </div>
+              )}
+              <h3 className="font-display text-lg font-bold text-gray-900 mb-2 group-hover:text-brand transition-colors leading-snug">
+                {g.h1}
+              </h3>
+              <p className="text-sm text-gray-600 line-clamp-2 leading-relaxed">
+                {g.meta_description}
+              </p>
+              <div className="text-sm text-brand mt-3 font-semibold group-hover:underline">
+                Read guide →
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 

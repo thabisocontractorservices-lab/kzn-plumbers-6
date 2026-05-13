@@ -47,6 +47,18 @@ export default async function PlumberPage({
 
   if (!plumber) notFound();
 
+  // Pull 4 more plumbers in the same area for the "More plumbers in [Area]"
+  // section at the bottom. Top-rated first.
+  const { data: relatedPlumbersRaw } = await supabase
+    .from("plumbers")
+    .select("id, slug, trading_name, area, specialties, hourly_rate, google_rating, google_review_count, is_certified, is_emergency, availability_status, whatsapp_number")
+    .eq("is_verified", true)
+    .eq("area", plumber.area)
+    .neq("id", plumber.id)
+    .order("google_rating", { ascending: false, nullsFirst: false })
+    .limit(4);
+  const relatedPlumbers = relatedPlumbersRaw ?? [];
+
   const r = combinedRating(
     plumber.google_rating,
     plumber.google_review_count,
@@ -334,6 +346,98 @@ export default async function PlumberPage({
           )}
         </aside>
       </div>
+
+      {relatedPlumbers.length > 0 && (
+        <section className="max-w-6xl mx-auto px-6 py-12 border-t border-gray-200">
+          <div className="flex items-end justify-between mb-6">
+            <div>
+              <h2 className="font-display text-2xl md:text-3xl font-extrabold text-gray-900">
+                More verified plumbers in {plumber.area}
+              </h2>
+              <p className="text-gray-600 text-sm mt-1">
+                Compare and message multiple plumbers — most respond within an hour.
+              </p>
+            </div>
+            <a
+              href={`/?area=${encodeURIComponent(plumber.area)}`}
+              className="text-sm font-semibold text-brand hover:underline whitespace-nowrap hidden sm:inline"
+            >
+              See all →
+            </a>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {(relatedPlumbers as Array<{
+              id: string;
+              slug: string | null;
+              trading_name: string;
+              area: string;
+              specialties: string[];
+              google_rating: number | null;
+              google_review_count: number | null;
+              is_certified: boolean;
+              is_emergency: boolean;
+              whatsapp_number: string;
+            }>).map((p) => {
+              const stars = p.google_rating
+                ? "★".repeat(Math.round(p.google_rating)) +
+                  "☆".repeat(5 - Math.round(p.google_rating))
+                : "—";
+              return (
+                <a
+                  key={p.id}
+                  href={`/plumber/${p.slug ?? p.id}`}
+                  className="block bg-white border border-gray-200 rounded-xl p-4 hover:border-brand hover:shadow-md transition-all"
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-lg bg-brand text-white flex items-center justify-center font-bold text-sm shrink-0">
+                      {initials(p.trading_name)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-display font-bold text-gray-900 truncate text-sm">
+                        {p.trading_name}
+                      </div>
+                      <div className="text-xs text-gray-500 truncate">
+                        📍 {p.area}
+                      </div>
+                    </div>
+                  </div>
+                  {(p.google_rating || p.is_certified || p.is_emergency) && (
+                    <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                      {p.google_rating && (
+                        <span className="text-xs">
+                          <span className="text-amber-500">{stars}</span>
+                          <span className="text-gray-600 ml-1">
+                            {p.google_rating.toFixed(1)} ({p.google_review_count})
+                          </span>
+                        </span>
+                      )}
+                      {p.is_certified && (
+                        <span className="text-[10px] bg-teal-100 text-teal-800 px-1.5 py-0.5 rounded font-semibold uppercase">
+                          ✓ PIRB
+                        </span>
+                      )}
+                      {p.is_emergency && (
+                        <span className="text-[10px] bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded font-semibold uppercase">
+                          24/7
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  <div className="text-xs text-gray-600 line-clamp-1">
+                    {(p.specialties ?? []).slice(0, 3).join(" • ")}
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+          <a
+            href={`/?area=${encodeURIComponent(plumber.area)}`}
+            className="inline-block sm:hidden mt-5 text-sm font-semibold text-brand hover:underline"
+          >
+            See all plumbers in {plumber.area} →
+          </a>
+        </section>
+      )}
     </>
   );
 }
