@@ -290,7 +290,7 @@ export default async function PlumberPage({
               <a
                 href={whatsAppLink(
                   plumber.whatsapp_number,
-                  `Hi, I found ${plumber.trading_name} on kznplumbers.co.za and would like to get a quote for ${(plumber.specialties?.[0] ?? "plumbing work").toLowerCase()} in ${plumber.area}.`,
+                  `Hi, I found ${plumber.trading_name} on kznplumbers.co.za`,
                 )}
                 target="_blank"
                 rel="noopener noreferrer"
