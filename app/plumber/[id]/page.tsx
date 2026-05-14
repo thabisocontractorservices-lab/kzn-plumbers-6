@@ -4,6 +4,7 @@ import {
   callLink,
   combinedRating,
   formatRand,
+  formatWhatsApp,
   initials,
   isLandline,
   whatsAppLink,
@@ -81,8 +82,73 @@ export default async function PlumberPage({
     ? reviewUrl(plumber.google_place_id)
     : null;
 
+  // Pre-compute CTA props to avoid duplicating the logic
+  const waLink = whatsAppLink(
+    plumber.whatsapp_number,
+    `Hi, I found ${plumber.trading_name} on kznplumbers.co.za and would like to get a quote for ${(plumber.specialties?.[0] ?? "plumbing work").toString().toLowerCase()} in ${plumber.area}.`,
+  );
+  const phoneLink = callLink(plumber.whatsapp_number);
+  const landline = isLandline(plumber.whatsapp_number);
+
+  // LocalBusiness JSON-LD for rich Google results (star ratings, business info)
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Plumber",
+    name: plumber.trading_name,
+    url: `https://www.kznplumbers.co.za/plumber/${plumber.slug ?? plumber.id}`,
+    telephone: `+${formatWhatsApp(plumber.whatsapp_number)}`,
+    address: {
+      "@type": "PostalAddress",
+      addressLocality: plumber.area,
+      addressRegion: "KwaZulu-Natal",
+      addressCountry: "ZA",
+    },
+    areaServed: {
+      "@type": "AdministrativeArea",
+      name: plumber.area + ", KwaZulu-Natal",
+    },
+    ...(profilePhoto && { image: profilePhoto }),
+    ...(plumber.about && { description: plumber.about }),
+    priceRange: plumber.hourly_rate
+      ? `R${plumber.hourly_rate}/hr`
+      : "Contact for quote",
+    ...(r.rating && r.count > 0 && {
+      aggregateRating: {
+        "@type": "AggregateRating",
+        ratingValue: r.rating,
+        reviewCount: r.count,
+        bestRating: 5,
+        worstRating: 1,
+      },
+    }),
+    ...(plumber.is_emergency && {
+      openingHoursSpecification: {
+        "@type": "OpeningHoursSpecification",
+        dayOfWeek: [
+          "Monday", "Tuesday", "Wednesday", "Thursday",
+          "Friday", "Saturday", "Sunday",
+        ],
+        opens: "00:00",
+        closes: "23:59",
+      },
+    }),
+    ...(plumber.pirb_number && {
+      hasCredential: {
+        "@type": "EducationalOccupationalCredential",
+        credentialCategory: "Professional Licence",
+        name: `PIRB ${plumber.pirb_number}`,
+      },
+    }),
+  };
+
   return (
     <>
+      {/* LocalBusiness JSON-LD */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+
       {/* Banner */}
       <section className="bg-gradient-to-br from-brand to-brand-dark text-white py-6 sm:py-12 px-4 sm:px-6">
         <div className="max-w-7xl mx-auto">
@@ -104,7 +170,7 @@ export default async function PlumberPage({
               <h1 className="font-display text-xl sm:text-3xl md:text-4xl mb-1 leading-tight break-words">
                 {plumber.trading_name}
               </h1>
-              <div className="opacity-90 mb-3 text-xs sm:text-base">
+              <div className="opacity-90 mb-2 sm:mb-3 text-xs sm:text-base">
                 📍 {plumber.area}
                 {plumber.hourly_rate
                   ? ` · ${formatRand(plumber.hourly_rate)}/hr`
@@ -130,7 +196,60 @@ export default async function PlumberPage({
         </div>
       </section>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 grid lg:grid-cols-[1fr_380px] gap-4 sm:gap-6">
+      {/* Mobile CTA — immediately below hero, visible only on mobile */}
+      <div className="lg:hidden px-4 py-3 bg-white border-b border-gray-200 sticky top-0 z-30 shadow-sm">
+        <div className="flex gap-2 max-w-7xl mx-auto">
+          {landline ? (
+            <a href={phoneLink} className="btn-primary flex-1 text-center text-sm py-2.5">
+              📞 Call now
+            </a>
+          ) : (
+            <>
+              <a
+                href={waLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-whatsapp flex-1 text-center text-sm py-2.5"
+              >
+                💬 WhatsApp
+              </a>
+              <a href={phoneLink} className="btn-secondary text-sm py-2.5">
+                📞 Call
+              </a>
+            </>
+          )}
+          <a href="#book" className="btn-secondary text-sm py-2.5">
+            📅 Book
+          </a>
+        </div>
+      </div>
+
+      {/* Claim CTA — only for unclaimed listings, shown early */}
+      {!plumber.profile_id && (
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6">
+          <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-xl p-4 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center text-xl sm:text-2xl shrink-0">
+              🏢
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-display text-base sm:text-lg font-bold text-gray-900 mb-0.5">
+                Is this your business?
+              </h3>
+              <p className="text-xs sm:text-sm text-gray-600">
+                Claim this listing to update your profile and get more customers — free.
+              </p>
+            </div>
+            <a
+              href={`/claim/${plumber.slug ?? plumber.id}`}
+              className="btn-primary whitespace-nowrap shrink-0 text-sm"
+            >
+              Claim listing →
+            </a>
+          </div>
+        </section>
+      )}
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-10 pb-20 lg:pb-10 grid lg:grid-cols-[1fr_380px] gap-4 sm:gap-6">
         <div className="space-y-4 sm:space-y-5 min-w-0">
           {plumber.about && (
             <Panel title="About">
@@ -209,22 +328,24 @@ export default async function PlumberPage({
           {/* Google My Business section */}
           {plumber.google_place_id && (
             <Panel title="Google My Business Reviews">
-              <div className="flex items-center gap-5 p-4 bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200 rounded-xl mb-4">
-                <div className="font-display text-4xl font-bold text-gray-900 leading-none">
-                  {plumber.google_rating ?? "—"}
-                </div>
-                <div className="flex-1">
-                  <div className="text-amber-500 text-lg tracking-wide">★★★★★</div>
-                  <div className="text-xs text-gray-600">
-                    Based on <strong>{plumber.google_review_count ?? 0}</strong> reviews on{" "}
-                    <strong className="text-blue-600">Google</strong>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 p-4 bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200 rounded-xl mb-4">
+                <div className="flex items-center gap-3 sm:gap-5">
+                  <div className="font-display text-3xl sm:text-4xl font-bold text-gray-900 leading-none">
+                    {plumber.google_rating ?? "—"}
+                  </div>
+                  <div>
+                    <div className="text-amber-500 text-base sm:text-lg tracking-wide">★★★★★</div>
+                    <div className="text-xs text-gray-600">
+                      Based on <strong>{plumber.google_review_count ?? 0}</strong> reviews on{" "}
+                      <strong className="text-blue-600">Google</strong>
+                    </div>
                   </div>
                 </div>
                 <a
                   href={reviewLink ?? "#"}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="btn-primary"
+                  className="btn-primary text-sm sm:ml-auto"
                 >
                   Write a Google Review
                 </a>
@@ -303,33 +424,24 @@ export default async function PlumberPage({
 
         {/* Sidebar */}
         <aside className="space-y-5">
-          <div id="book" className="panel sticky top-20">
-            <div className="flex gap-2 mb-4">
-              {isLandline(plumber.whatsapp_number) ? (
-                // Landline → Call only (WhatsApp won't work)
-                <a
-                  href={callLink(plumber.whatsapp_number)}
-                  className="btn-primary flex-1"
-                >
+          <div id="book" className="panel lg:sticky lg:top-20">
+            {/* CTA buttons — hidden on mobile (shown in sticky bar instead) */}
+            <div className="hidden lg:flex gap-2 mb-4">
+              {landline ? (
+                <a href={phoneLink} className="btn-primary flex-1">
                   📞 Call now
                 </a>
               ) : (
                 <>
                   <a
-                    href={whatsAppLink(
-                      plumber.whatsapp_number,
-                      `Hi, I found ${plumber.trading_name} on kznplumbers.co.za and would like to get a quote for ${(plumber.specialties?.[0] ?? "plumbing work").toString().toLowerCase()} in ${plumber.area}.`,
-                    )}
+                    href={waLink}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="btn-whatsapp flex-1"
                   >
                     💬 WhatsApp
                   </a>
-                  <a
-                    href={callLink(plumber.whatsapp_number)}
-                    className="btn-secondary"
-                  >
+                  <a href={phoneLink} className="btn-secondary">
                     📞 Call
                   </a>
                 </>
@@ -367,32 +479,6 @@ export default async function PlumberPage({
           )}
         </aside>
       </div>
-
-      {/* Claim CTA — only for unclaimed listings */}
-      {!plumber.profile_id && (
-        <section className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-xl p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center text-2xl shrink-0">
-              🏢
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="font-display text-lg font-bold text-gray-900 mb-0.5">
-                Is this your business?
-              </h3>
-              <p className="text-sm text-gray-600">
-                Claim this listing to update your profile, respond to enquiries,
-                upload photos, and get more customers — completely free.
-              </p>
-            </div>
-            <a
-              href={`/claim/${plumber.slug ?? plumber.id}`}
-              className="btn-primary whitespace-nowrap shrink-0"
-            >
-              Claim listing →
-            </a>
-          </div>
-        </section>
-      )}
 
       {relatedPlumbers.length > 0 && (
         <section className="max-w-6xl mx-auto px-6 py-12 border-t border-gray-200">
