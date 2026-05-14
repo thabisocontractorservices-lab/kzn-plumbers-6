@@ -51,7 +51,7 @@ function AdminPageInner() {
     let mounted = true;
 
     (async () => {
-      const queries: Promise<unknown>[] = [
+      const [appsRes, pendingRes, approvedRes, claimsCountRes] = await Promise.all([
         supabase
           .from("plumbers")
           .select("*, certifications(count), photos(count), profile:profiles(full_name, email)")
@@ -59,46 +59,24 @@ function AdminPageInner() {
           .order("created_at", { ascending: false }),
         supabase.from("plumbers").select("*", { count: "exact", head: true }).eq("is_verified", false),
         supabase.from("plumbers").select("*", { count: "exact", head: true }).eq("is_verified", true),
-      ];
-
-      // Only fetch claims if on claims tab, otherwise just count
-      if (tab === "claims") {
-        queries.push(
-          supabase
-            .from("claims")
-            .select("*, plumber:plumbers(trading_name, area, whatsapp_number, slug), claimant:profiles(full_name, email)")
-            .eq("status", "pending")
-            .order("created_at", { ascending: false }),
-        );
-      }
-      queries.push(
         supabase.from("claims").select("*", { count: "exact", head: true }).eq("status", "pending"),
-      );
-
-      const results = await Promise.all(queries);
+      ]);
 
       if (!mounted) return;
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const appsRes = results[0] as any;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const pendingRes = results[1] as any;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const approvedRes = results[2] as any;
 
       setApplications((appsRes.data as Application[]) ?? []);
       setPending(pendingRes.count ?? 0);
       setApproved(approvedRes.count ?? 0);
+      setClaimsPending(claimsCountRes.count ?? 0);
 
       if (tab === "claims") {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const claimsRes = results[3] as any;
-        setClaims((claimsRes.data as Claim[]) ?? []);
+        const claimsRes = await supabase
+          .from("claims")
+          .select("*, plumber:plumbers(trading_name, area, whatsapp_number, slug), claimant:profiles(full_name, email)")
+          .eq("status", "pending")
+          .order("created_at", { ascending: false });
+        if (mounted) setClaims((claimsRes.data as Claim[]) ?? []);
       }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const claimsCountRes = results[tab === "claims" ? 4 : 3] as any;
-      setClaimsPending(claimsCountRes.count ?? 0);
 
       setLoading(false);
     })();
