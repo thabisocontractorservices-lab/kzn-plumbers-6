@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { supabase } from "@/src/supabaseClient";
 import { useAuthGate } from "@/lib/useAuthGate";
 import { AdminCard } from "@/components/AdminCard";
+import { ClaimCard, type Claim } from "@/components/ClaimCard";
 import { DashboardLoading } from "@/components/DashboardLoading";
 
 type Application = {
@@ -39,8 +40,10 @@ function AdminPageInner() {
   const isVerified = tab === "approved";
 
   const [applications, setApplications] = useState<Application[]>([]);
+  const [claims, setClaims] = useState<Claim[]>([]);
   const [pending, setPending] = useState(0);
   const [approved, setApproved] = useState(0);
+  const [claimsPending, setClaimsPending] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -48,7 +51,7 @@ function AdminPageInner() {
     let mounted = true;
 
     (async () => {
-      const [appsRes, pendingRes, approvedRes] = await Promise.all([
+      const queries: Promise<unknown>[] = [
         supabase
           .from("plumbers")
           .select("*, certifications(count), photos(count), profile:profiles(full_name, email)")
@@ -56,19 +59,54 @@ function AdminPageInner() {
           .order("created_at", { ascending: false }),
         supabase.from("plumbers").select("*", { count: "exact", head: true }).eq("is_verified", false),
         supabase.from("plumbers").select("*", { count: "exact", head: true }).eq("is_verified", true),
-      ]);
+      ];
+
+      // Only fetch claims if on claims tab, otherwise just count
+      if (tab === "claims") {
+        queries.push(
+          supabase
+            .from("claims")
+            .select("*, plumber:plumbers(trading_name, area, whatsapp_number, slug), claimant:profiles(full_name, email)")
+            .eq("status", "pending")
+            .order("created_at", { ascending: false }),
+        );
+      }
+      queries.push(
+        supabase.from("claims").select("*", { count: "exact", head: true }).eq("status", "pending"),
+      );
+
+      const results = await Promise.all(queries);
 
       if (!mounted) return;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const appsRes = results[0] as any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pendingRes = results[1] as any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const approvedRes = results[2] as any;
+
       setApplications((appsRes.data as Application[]) ?? []);
       setPending(pendingRes.count ?? 0);
       setApproved(approvedRes.count ?? 0);
+
+      if (tab === "claims") {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const claimsRes = results[3] as any;
+        setClaims((claimsRes.data as Claim[]) ?? []);
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const claimsCountRes = results[tab === "claims" ? 4 : 3] as any;
+      setClaimsPending(claimsCountRes.count ?? 0);
+
       setLoading(false);
     })();
 
     return () => {
       mounted = false;
     };
-  }, [user, isVerified]);
+  }, [user, isVerified, tab]);
 
   if (authChecking || loading) return <DashboardLoading />;
   if (!user) return null;
@@ -80,9 +118,10 @@ function AdminPageInner() {
           <h1 className="font-display text-3xl">Admin Panel</h1>
           <p className="text-gray-500 text-sm">Review and approve plumber applications</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
           <StatBox icon="⏳" value={pending} label="Pending review" color="bg-amber-light text-amber" />
           <StatBox icon="✓" value={approved} label="Verified live" color="bg-green-100 text-green-800" />
+          <StatBox icon="🏢" value={claimsPending} label="Claims pending" color="bg-orange-100 text-orange-700" />
         </div>
       </header>
 
@@ -93,19 +132,39 @@ function AdminPageInner() {
         <TabLink href="/admin?tab=approved" active={tab === "approved"} count={approved}>
           Approved
         </TabLink>
+        <TabLink href="/admin?tab=claims" active={tab === "claims"} count={claimsPending}>
+          Claims
+        </TabLink>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {applications.map((app) => (
-          <AdminCard key={app.id} app={app} />
-        ))}
-        {applications.length === 0 && (
-          <div className="col-span-full bg-white border border-gray-200 rounded-xl p-12 text-center">
-            <div className="text-3xl mb-2">📭</div>
-            <div className="font-semibold">No applications in this view</div>
-          </div>
-        )}
-      </div>
+      {tab === "claims" ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {claims.map((claim) => (
+            <ClaimCard key={claim.id} claim={claim} />
+          ))}
+          {claims.length === 0 && (
+            <div className="col-span-full bg-white border border-gray-200 rounded-xl p-12 text-center">
+              <div className="text-3xl mb-2">📭</div>
+              <div className="font-semibold">No pending claims</div>
+              <p className="text-sm text-gray-500 mt-1">
+                When plumbers claim their listings, they&apos;ll appear here for review.
+              </p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {applications.map((app) => (
+            <AdminCard key={app.id} app={app} />
+          ))}
+          {applications.length === 0 && (
+            <div className="col-span-full bg-white border border-gray-200 rounded-xl p-12 text-center">
+              <div className="text-3xl mb-2">📭</div>
+              <div className="font-semibold">No applications in this view</div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
