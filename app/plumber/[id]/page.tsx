@@ -368,6 +368,32 @@ export default async function PlumberPage({
         </aside>
       </div>
 
+      {/* Claim CTA — only for unclaimed listings */}
+      {!plumber.profile_id && (
+        <section className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-xl p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center text-2xl shrink-0">
+              🏢
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-display text-lg font-bold text-gray-900 mb-0.5">
+                Is this your business?
+              </h3>
+              <p className="text-sm text-gray-600">
+                Claim this listing to update your profile, respond to enquiries,
+                upload photos, and get more customers — completely free.
+              </p>
+            </div>
+            <a
+              href={`/claim/${plumber.slug ?? plumber.id}`}
+              className="btn-primary whitespace-nowrap shrink-0"
+            >
+              Claim listing →
+            </a>
+          </div>
+        </section>
+      )}
+
       {relatedPlumbers.length > 0 && (
         <section className="max-w-6xl mx-auto px-6 py-12 border-t border-gray-200">
           <div className="flex items-end justify-between mb-6">
