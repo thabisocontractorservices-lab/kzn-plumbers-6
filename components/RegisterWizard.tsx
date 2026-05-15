@@ -102,66 +102,64 @@ export function RegisterWizard() {
 
     setSubmitting(true);
 
-    // 1) Sign up the auth user with profile metadata so the
-    //    handle_new_user trigger creates a profile with the right name and role.
-    const { data: signupData, error: signupErr } = await supabase.auth.signUp({
-      email: account.email,
-      password: account.password,
-      options: {
-        data: {
-          full_name: account.full_name,
-          role: "plumber",
-        },
-      },
-    });
-    if (signupErr) {
-      setError(`Sign-up failed: ${signupErr.message}`);
-      setSubmitting(false);
-      return;
-    }
-    if (!signupData.user) {
-      setError(
-        "Sign-up failed: no user returned. If email confirmation is enabled, please confirm your email and try again.",
-      );
-      setSubmitting(false);
-      return;
-    }
+    try {
+      // Call server-side API route — handles auth + plumber insert with
+      // service-role client, so email confirmation doesn't break the flow.
+      const res = await fetch("/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account: {
+            full_name: account.full_name,
+            email: account.email,
+            phone: account.phone,
+            whatsapp: account.whatsapp,
+            password: account.password,
+          },
+          business: {
+            trading_name: biz.trading_name,
+            area: biz.area,
+            hourly_rate: biz.hourly_rate,
+            specialties: biz.specialties,
+            is_emergency: biz.is_emergency,
+            google_calendar_url: biz.google_calendar_url,
+            google_place_id: biz.google_place_id,
+            pirb_number: biz.pirb_number,
+          },
+        }),
+      });
 
-    // 2) Create the plumbers row (pending admin verification).
-    //    Uses RLS — requires the just-signed-up user to have an active session.
-    const { error: pErr } = await supabase.from("plumbers").insert({
-      profile_id: signupData.user.id,
-      trading_name: biz.trading_name,
-      area: biz.area,
-      hourly_rate: biz.hourly_rate,
-      specialties: biz.specialties,
-      is_emergency: biz.is_emergency,
-      google_calendar_url: biz.google_calendar_url || null,
-      google_place_id: biz.google_place_id || null,
-      pirb_number: biz.pirb_number || null,
-      whatsapp_number: formatWhatsApp(account.whatsapp),
-      is_certified: !!biz.pirb_number,
-      is_verified: false,
-      availability_status: "available",
-    });
-    if (pErr) {
-      setError(
-        `Account created but business profile failed to save: ${pErr.message}. ` +
-          `Please contact support — your email is ${account.email}.`,
-      );
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error ?? "Registration failed. Please try again.");
+        setSubmitting(false);
+        return;
+      }
+
+      // Success — show confirmation screen.
       setSubmitting(false);
-      return;
+      setStep(4);
+
+      // Try to sign in immediately (will work if email confirmation is OFF).
+      const { error: signInErr } = await supabase.auth.signInWithPassword({
+        email: account.email,
+        password: account.password,
+      });
+
+      // If sign-in succeeded, redirect to dashboard after a pause.
+      if (!signInErr) {
+        setTimeout(() => {
+          router.push("/dashboard");
+          router.refresh();
+        }, 2500);
+      }
+      // If sign-in failed (email not confirmed yet), the success screen
+      // will tell them to check their email — no auto-redirect.
+    } catch {
+      setError("Network error. Please check your connection and try again.");
+      setSubmitting(false);
     }
-
-    // Success — show the success screen briefly, then redirect to dashboard.
-    setSubmitting(false);
-    setStep(4);
-
-    // Auto-redirect to dashboard after 2.5s so they see the pending banner.
-    setTimeout(() => {
-      router.push("/dashboard");
-      router.refresh();
-    }, 2500);
   }
 
   const stepTitle = ["Account details", "Business info", "Credentials & photos", ""][step - 1];
@@ -207,7 +205,7 @@ export function RegisterWizard() {
               placeholder="e.g. Sipho Mthembu"
             />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Email">
               <input
                 type="email"
@@ -237,7 +235,7 @@ export function RegisterWizard() {
               placeholder="+27 82 ..."
             />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Password">
               <input
                 type="password"
@@ -271,7 +269,7 @@ export function RegisterWizard() {
               placeholder="e.g. Sipho's Master Plumbing"
             />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Area of operation">
               <select
                 value={biz.area}
@@ -399,23 +397,41 @@ export function RegisterWizard() {
           </div>
           <h2 className="font-display text-2xl mb-2">Application submitted!</h2>
           <p className="text-gray-600 mb-6 max-w-md mx-auto">
-            We'll verify your PIRB credentials within <strong>24–48 hours</strong>. Once approved, your profile goes live on the directory immediately.
+            We&apos;ll verify your PIRB credentials within <strong>24–48 hours</strong>. Once approved, your profile goes live on the directory immediately.
           </p>
-          <div className="bg-brand-light rounded-xl p-5 max-w-md mx-auto mb-6 text-left">
+
+          {/* Email confirmation notice */}
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 max-w-md mx-auto mb-4 text-left">
             <div className="flex gap-3 items-center mb-1">
-              <span className="text-2xl">📨</span>
-              <strong>Application submitted</strong>
+              <span className="text-2xl">📧</span>
+              <strong className="text-blue-900">Check your email</strong>
             </div>
-            <div className="text-sm text-gray-700">
-              Your application reference is <strong>#KZN-{Date.now().toString().slice(-7)}</strong>. Check your email to confirm your account, then watch this space — admin verification typically takes 24–48 hours.
+            <div className="text-sm text-blue-800">
+              We&apos;ve sent a confirmation link to <strong>{account.email}</strong>.
+              Click it to activate your account, then you can log in and access your dashboard.
             </div>
           </div>
-          <p className="text-xs text-gray-500 mb-6">
-            Redirecting to your dashboard…
-          </p>
-          <button onClick={() => router.push("/dashboard")} className="btn-primary">
-            Go to dashboard →
-          </button>
+
+          <div className="bg-brand-light rounded-xl p-5 max-w-md mx-auto mb-6 text-left">
+            <div className="flex gap-3 items-center mb-1">
+              <span className="text-2xl">📋</span>
+              <strong>What happens next</strong>
+            </div>
+            <div className="text-sm text-gray-700 space-y-1">
+              <div>1. <strong>Confirm your email</strong> — check your inbox (and spam folder)</div>
+              <div>2. <strong>Admin review</strong> — we verify your credentials (24–48 hrs)</div>
+              <div>3. <strong>Go live</strong> — your profile appears on the directory</div>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <button onClick={() => router.push("/login")} className="btn-primary">
+              Go to login →
+            </button>
+            <button onClick={() => router.push("/")} className="btn-secondary">
+              Back to directory
+            </button>
+          </div>
         </div>
       )}
 
