@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { notifyNewRegistration } from "@/lib/email";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -124,6 +125,15 @@ export async function POST(req: NextRequest) {
         { status: 500 },
       );
     }
+
+    // ── 5. Notify admin (fire-and-forget — never blocks the response) ────
+    notifyNewRegistration({
+      tradingName: business.trading_name,
+      area: business.area,
+      email,
+      phone: phone || whatsapp || "—",
+      specialties: business.specialties,
+    }).catch(() => {}); // swallow any errors
 
     return NextResponse.json({
       success: true,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { notifyNewClaim } from "@/lib/email";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -128,13 +129,30 @@ export async function POST(req: NextRequest) {
         .update({ role: "plumber", whatsapp_number: phone })
         .eq("id", user.id);
 
+      // Notify admin (fire-and-forget)
+      notifyNewClaim({
+        tradingName: plumber.trading_name,
+        claimantEmail: user.email || "unknown",
+        phoneEntered: phone,
+        phoneMatch: true,
+        status: "auto_approved",
+      }).catch(() => {});
+
       return NextResponse.json({
         status: "auto_approved",
         message: `${plumber.trading_name} is now linked to your account.`,
       });
     }
 
-    // 9. Pending → admin will review
+    // 9. Pending → admin will review — notify admin
+    notifyNewClaim({
+      tradingName: plumber.trading_name,
+      claimantEmail: user.email || "unknown",
+      phoneEntered: phone,
+      phoneMatch: false,
+      status: "pending",
+    }).catch(() => {});
+
     return NextResponse.json({
       status: "pending",
       message:
