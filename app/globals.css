@@ -33,7 +33,7 @@ h1, h2, h3, h4 {
     @apply btn bg-whatsapp text-white hover:bg-whatsapp-dark;
   }
   .panel {
-    @apply bg-white border border-gray-200 rounded-xl p-4 sm:p-6;
+    @apply bg-white border border-gray-200 rounded-xl p-4 sm:p-6 overflow-hidden;
   }
   .badge {
     @apply inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide;

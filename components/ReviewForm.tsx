@@ -40,7 +40,7 @@ export function ReviewForm({ plumberId }: { plumberId: string }) {
       className="bg-gray-50 rounded-xl p-5 border border-gray-200"
     >
       <div className="font-semibold text-sm mb-3">Leave a Review</div>
-      <div className="grid grid-cols-2 gap-3 mb-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
         <input
           required
           placeholder="Your name"
@@ -52,7 +52,7 @@ export function ReviewForm({ plumberId }: { plumberId: string }) {
       </div>
       <div className="mb-3">
         <div className="text-xs font-semibold text-gray-700 mb-1">Rating</div>
-        <div className="flex gap-1 text-3xl select-none">
+        <div className="flex gap-1 text-2xl sm:text-3xl select-none">
           {[1, 2, 3, 4, 5].map((s) => (
             <span
               key={s}
