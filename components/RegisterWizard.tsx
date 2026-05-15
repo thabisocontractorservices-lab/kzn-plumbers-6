@@ -103,19 +103,43 @@ export function RegisterWizard() {
     setSubmitting(true);
 
     try {
-      // Call server-side API route — handles auth + plumber insert with
-      // service-role client, so email confirmation doesn't break the flow.
+      // ── Step 1: Client-side signUp() ─────────────────────────────────────
+      // This creates the auth user AND sends the confirmation email using the
+      // custom Supabase email template (with {{ .ConfirmationURL }}).
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: account.email,
+        password: account.password,
+        options: {
+          data: {
+            full_name: account.full_name,
+            role: "plumber",
+          },
+        },
+      });
+
+      if (signUpError) {
+        setError(signUpError.message);
+        setSubmitting(false);
+        return;
+      }
+
+      // Supabase returns the user even when email confirmation is required
+      // (session will be null until they confirm).
+      if (!signUpData.user) {
+        setError("Could not create account. Please try again.");
+        setSubmitting(false);
+        return;
+      }
+
+      // ── Step 2: Server route inserts plumber row ─────────────────────────
+      // Uses service-role to bypass RLS (user has no session yet).
       const res = await fetch("/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          account: {
-            full_name: account.full_name,
-            email: account.email,
-            phone: account.phone,
-            whatsapp: account.whatsapp,
-            password: account.password,
-          },
+          email: account.email,
+          phone: account.phone,
+          whatsapp: account.whatsapp,
           business: {
             trading_name: biz.trading_name,
             area: biz.area,
@@ -131,31 +155,15 @@ export function RegisterWizard() {
 
       const data = await res.json();
 
-      if (!res.ok) {
+      if (!res.ok && !data.partial) {
         setError(data.error ?? "Registration failed. Please try again.");
         setSubmitting(false);
         return;
       }
 
-      // Success — show confirmation screen.
+      // Success — show "check your email" screen (no auto-redirect).
       setSubmitting(false);
       setStep(4);
-
-      // Try to sign in immediately (will work if email confirmation is OFF).
-      const { error: signInErr } = await supabase.auth.signInWithPassword({
-        email: account.email,
-        password: account.password,
-      });
-
-      // If sign-in succeeded, redirect to dashboard after a pause.
-      if (!signInErr) {
-        setTimeout(() => {
-          router.push("/dashboard");
-          router.refresh();
-        }, 2500);
-      }
-      // If sign-in failed (email not confirmed yet), the success screen
-      // will tell them to check their email — no auto-redirect.
     } catch {
       setError("Network error. Please check your connection and try again.");
       setSubmitting(false);
@@ -392,37 +400,30 @@ export function RegisterWizard() {
 
       {step === 4 && (
         <div className="text-center py-6">
-          <div className="w-20 h-20 rounded-full bg-teal-light text-teal flex items-center justify-center text-4xl mx-auto mb-6">
-            ✓
+          <div className="w-20 h-20 rounded-full bg-brand-light text-brand flex items-center justify-center text-4xl mx-auto mb-6">
+            ✉️
           </div>
-          <h2 className="font-display text-2xl mb-2">Application submitted!</h2>
+          <h2 className="font-display text-2xl mb-2">Check your email!</h2>
           <p className="text-gray-600 mb-6 max-w-md mx-auto">
-            We&apos;ll verify your PIRB credentials within <strong>24–48 hours</strong>. Once approved, your profile goes live on the directory immediately.
+            We&apos;ve sent a confirmation link to <strong>{account.email}</strong>. Click the link in the email to activate your account.
           </p>
-
-          {/* Email confirmation notice */}
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 max-w-md mx-auto mb-4 text-left">
-            <div className="flex gap-3 items-center mb-1">
-              <span className="text-2xl">📧</span>
-              <strong className="text-blue-900">Check your email</strong>
-            </div>
-            <div className="text-sm text-blue-800">
-              We&apos;ve sent a confirmation link to <strong>{account.email}</strong>.
-              Click it to activate your account, then you can log in and access your dashboard.
-            </div>
-          </div>
 
           <div className="bg-brand-light rounded-xl p-5 max-w-md mx-auto mb-6 text-left">
             <div className="flex gap-3 items-center mb-1">
               <span className="text-2xl">📋</span>
               <strong>What happens next</strong>
             </div>
-            <div className="text-sm text-gray-700 space-y-1">
-              <div>1. <strong>Confirm your email</strong> — check your inbox (and spam folder)</div>
-              <div>2. <strong>Admin review</strong> — we verify your credentials (24–48 hrs)</div>
-              <div>3. <strong>Go live</strong> — your profile appears on the directory</div>
+            <div className="text-sm text-gray-700 space-y-2">
+              <div>1. 📧 <strong>Confirm your email</strong> — click the link we just sent</div>
+              <div>2. 🔑 <strong>Log in</strong> — use your email &amp; password</div>
+              <div>3. ⏳ <strong>Admin review</strong> — we verify your credentials (24–48 hrs)</div>
+              <div>4. 🚀 <strong>Go live</strong> — your profile appears on the directory</div>
             </div>
           </div>
+
+          <p className="text-xs text-gray-500 mb-4">
+            Didn&apos;t get the email? Check your spam folder or try registering again.
+          </p>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button onClick={() => router.push("/login")} className="btn-primary">

@@ -9,11 +9,18 @@ const supabaseAdmin = createClient(
 /**
  * POST /api/register
  *
- * Server-side registration that works whether email confirmation is ON or OFF.
- * Uses the service-role client to bypass RLS for the plumbers insert.
+ * Step 2 of registration — called AFTER the client-side signUp() which
+ * creates the auth user and sends the confirmation email.
+ *
+ * This route uses the service-role client to:
+ * 1. Look up the user by email (verify they exist)
+ * 2. Update their profile with phone numbers
+ * 3. Insert the plumbers row (bypasses RLS)
  *
  * Body: {
- *   account: { full_name, email, phone, whatsapp, password },
+ *   email: string,           // Used to look up the auth user
+ *   phone: string,
+ *   whatsapp: string,
  *   business: { trading_name, area, hourly_rate, specialties, is_emergency,
  *               google_calendar_url?, google_place_id?, pirb_number? }
  * }
@@ -21,12 +28,12 @@ const supabaseAdmin = createClient(
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { account, business } = body;
+    const { email, phone, whatsapp, business } = body;
 
     // ── Validate ──────────────────────────────────────────────────────────
-    if (!account?.email || !account?.password || !account?.full_name) {
+    if (!email) {
       return NextResponse.json(
-        { error: "Missing required account fields" },
+        { error: "Missing email" },
         { status: 400 },
       );
     }
@@ -37,48 +44,58 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── 1. Create auth user ───────────────────────────────────────────────
-    // Using admin API so email confirmation doesn't block us.
-    // The handle_new_user trigger will create the profiles row automatically.
-    const { data: authData, error: authError } =
-      await supabaseAdmin.auth.admin.createUser({
-        email: account.email,
-        password: account.password,
-        email_confirm: false, // Let Supabase send the confirmation email
-        user_metadata: {
-          full_name: account.full_name,
-          role: "plumber",
-        },
-      });
+    // ── 1. Look up the auth user by email ─────────────────────────────────
+    // The client already called signUp() which created the user + sent
+    // the confirmation email. We just need to find them.
+    const { data: usersData, error: listError } =
+      await supabaseAdmin.auth.admin.listUsers();
 
-    if (authError) {
-      // Duplicate email
-      if (authError.message?.includes("already been registered")) {
-        return NextResponse.json(
-          { error: "An account with this email already exists. Please log in instead." },
-          { status: 409 },
-        );
-      }
-      console.error("Auth error:", authError);
+    if (listError) {
+      console.error("List users error:", listError);
       return NextResponse.json(
-        { error: `Registration failed: ${authError.message}` },
+        { error: "Failed to verify account" },
         { status: 500 },
       );
     }
 
-    const userId = authData.user.id;
+    const user = usersData.users.find(
+      (u) => u.email?.toLowerCase() === email.toLowerCase(),
+    );
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Account not found. Please try registering again." },
+        { status: 404 },
+      );
+    }
+
+    const userId = user.id;
 
     // ── 2. Update the profile with phone numbers ──────────────────────────
-    // The trigger creates the profile, but phone/whatsapp aren't in metadata.
     await supabaseAdmin
       .from("profiles")
       .update({
-        phone: account.phone,
-        whatsapp_number: account.whatsapp,
+        phone: phone || null,
+        whatsapp_number: whatsapp || null,
       })
       .eq("id", userId);
 
-    // ── 3. Insert the plumbers row (bypasses RLS via service role) ─────────
+    // ── 3. Check if plumber row already exists (idempotent) ───────────────
+    const { data: existing } = await supabaseAdmin
+      .from("plumbers")
+      .select("id")
+      .eq("profile_id", userId)
+      .maybeSingle();
+
+    if (existing) {
+      return NextResponse.json({
+        success: true,
+        message: "Business profile already exists.",
+        userId,
+      });
+    }
+
+    // ── 4. Insert the plumbers row (bypasses RLS via service role) ─────────
     const { error: plumberError } = await supabaseAdmin
       .from("plumbers")
       .insert({
@@ -91,7 +108,7 @@ export async function POST(req: NextRequest) {
         google_calendar_url: business.google_calendar_url || null,
         google_place_id: business.google_place_id || null,
         pirb_number: business.pirb_number || null,
-        whatsapp_number: normalisePhone(account.whatsapp),
+        whatsapp_number: normalisePhone(whatsapp),
         is_certified: !!business.pirb_number,
         is_verified: false,
         availability_status: "available",
@@ -99,24 +116,18 @@ export async function POST(req: NextRequest) {
 
     if (plumberError) {
       console.error("Plumber insert error:", plumberError);
-      // Auth user was created — don't leave them orphaned.
-      // Return partial success so they know account exists.
       return NextResponse.json(
         {
-          error: `Account created but business profile failed: ${plumberError.message}. Contact support with email ${account.email}.`,
+          error: `Account created but business profile failed: ${plumberError.message}. Contact support with email ${email}.`,
           partial: true,
         },
         { status: 500 },
       );
     }
 
-    // ── 4. Send confirmation email ────────────────────────────────────────
-    // admin.createUser with email_confirm: false triggers Supabase to send
-    // the confirmation email automatically (if enabled in Auth settings).
-
     return NextResponse.json({
       success: true,
-      message: "Registration complete. Please check your email to confirm your account.",
+      message: "Registration complete. Please confirm your email to log in.",
       userId,
     });
   } catch (err) {
