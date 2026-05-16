@@ -39,6 +39,7 @@ export async function GET(request: Request) {
   // Build the URL list from our own data sources (mirrors app/sitemap.ts).
   const urls: string[] = [
     SITE_URL,
+    `${SITE_URL}/all-plumbers`,
     `${SITE_URL}/register`,
     `${SITE_URL}/login`,
   ];

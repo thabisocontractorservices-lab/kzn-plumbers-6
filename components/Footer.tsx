@@ -18,6 +18,7 @@ export function Footer() {
           title="For Homeowners"
           links={[
             { href: "/", label: "Find a plumber" },
+            { href: "/all-plumbers", label: "Browse all plumbers" },
             { href: "/?filter=emergency", label: "Emergency callouts" },
             { href: "/about", label: "How it works" },
             { href: "/trust", label: "Trust & safety" },
