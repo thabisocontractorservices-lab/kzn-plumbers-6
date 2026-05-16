@@ -106,10 +106,16 @@ export function RegisterWizard() {
       // ── Step 1: Client-side signUp() ─────────────────────────────────────
       // This creates the auth user AND sends the confirmation email using the
       // custom Supabase email template (with {{ .ConfirmationURL }}).
+      //
+      // emailRedirectTo MUST be passed explicitly — otherwise Supabase falls
+      // back to the dashboard "Site URL" which can drift. Whatever URL we
+      // pass here must also be in Authentication → URL Configuration →
+      // Redirect URLs (allow-list) in the Supabase dashboard.
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email: account.email,
         password: account.password,
         options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
           data: {
             full_name: account.full_name,
             role: "plumber",

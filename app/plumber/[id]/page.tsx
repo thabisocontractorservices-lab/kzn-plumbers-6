@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { supabase } from "@/src/supabaseClient";
 import { notFound } from "next/navigation";
 import {
@@ -15,6 +16,103 @@ import { ReviewForm } from "@/components/ReviewForm";
 import { ReviewLinkPanel } from "@/components/ReviewLinkPanel";
 
 export const revalidate = 300; // 5 min
+
+// ─────────────────────────────────────────────────────────────────────────────
+// generateMetadata — Produces a UNIQUE <title>, <meta description>, canonical
+// URL, and Open Graph tags for every plumber profile.
+//
+// Without this, all 1,217 profiles were served with the same default metadata
+// from app/layout.tsx, which caused Google to treat them as duplicates and
+// refuse to index them ("Crawled - currently not indexed").
+// ─────────────────────────────────────────────────────────────────────────────
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const isUuid = UUID_RE.test(id);
+
+  const query = supabase
+    .from("plumbers")
+    .select(
+      "trading_name, area, specialties, about, is_certified, is_emergency, slug, photos(photo_url, is_profile_photo)",
+    )
+    .eq("is_verified", true);
+
+  const { data: plumber } = await (
+    isUuid ? query.eq("id", id) : query.eq("slug", id)
+  ).single<{
+    trading_name: string;
+    area: string;
+    specialties: string[] | null;
+    about: string | null;
+    is_certified: boolean;
+    is_emergency: boolean;
+    slug: string | null;
+    photos: Array<{ photo_url: string; is_profile_photo: boolean }> | null;
+  }>();
+
+  if (!plumber) {
+    return {
+      title: "Plumber not found — KZN Plumbers",
+      description:
+        "This plumber profile could not be found. Browse verified plumbers across KwaZulu-Natal at kznplumbers.co.za.",
+    };
+  }
+
+  const certified = plumber.is_certified ? "PIRB-certified" : "verified";
+  const specs = (plumber.specialties ?? [])
+    .slice(0, 3)
+    .join(", ")
+    .toLowerCase();
+  const emergency = plumber.is_emergency
+    ? " 24/7 emergency call-out available."
+    : "";
+
+  const title = `${plumber.trading_name} — ${certified} plumber in ${plumber.area} | KZN Plumbers`;
+
+  const description = plumber.about
+    ? plumber.about.slice(0, 155) + (plumber.about.length > 155 ? "…" : "")
+    : `${plumber.trading_name} offers ${
+        specs || "professional plumbing services"
+      } in ${plumber.area}, KwaZulu-Natal. ${
+        certified === "PIRB-certified"
+          ? "PIRB certified."
+          : "Verified directory listing."
+      }${emergency} Get a quote via WhatsApp.`;
+
+  const profilePhoto =
+    plumber.photos?.find((p) => p.is_profile_photo)?.photo_url ?? null;
+
+  const canonical = `https://www.kznplumbers.co.za/plumber/${
+    plumber.slug ?? id
+  }`;
+
+  return {
+    title,
+    description,
+    alternates: { canonical },
+    openGraph: {
+      title,
+      description,
+      url: canonical,
+      siteName: "KZN Plumbers",
+      type: "profile",
+      locale: "en_ZA",
+      ...(profilePhoto && { images: [{ url: profilePhoto }] }),
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      ...(profilePhoto && { images: [profilePhoto] }),
+    },
+  };
+}
 
 export default async function PlumberPage({
   params,
