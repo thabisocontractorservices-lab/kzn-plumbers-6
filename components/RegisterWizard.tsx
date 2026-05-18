@@ -1,9 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/src/supabaseClient";
 import { KZN_AREAS, SPECIALTIES, formatWhatsApp } from "@/lib/utils";
+
+type FileWithPreview = {
+  file: File;
+  preview: string; // object URL for images, empty for docs
+};
 
 type Step1 = {
   full_name: string;
@@ -48,6 +53,13 @@ export function RegisterWizard() {
     google_place_id: "",
     pirb_number: "",
   });
+
+  // File state for step 3
+  const [pirbCert, setPirbCert] = useState<FileWithPreview[]>([]);
+  const [otherCerts, setOtherCerts] = useState<FileWithPreview[]>([]);
+  const [profilePhoto, setProfilePhoto] = useState<FileWithPreview[]>([]);
+  const [workPhotos, setWorkPhotos] = useState<FileWithPreview[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
 
   // Validate the current step before allowing user to proceed.
   // Returns the human-readable error or null if valid.
@@ -165,6 +177,47 @@ export function RegisterWizard() {
         setError(data.error ?? "Registration failed. Please try again.");
         setSubmitting(false);
         return;
+      }
+
+      // ── Step 3: Upload files (fire-and-forget — don't block success) ────
+      const allFiles: { file: File; type: string; certName?: string }[] = [];
+
+      for (const f of pirbCert) {
+        allFiles.push({ file: f.file, type: "cert", certName: "PIRB Certificate" });
+      }
+      for (const f of otherCerts) {
+        allFiles.push({
+          file: f.file,
+          type: "cert",
+          certName: f.file.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " "),
+        });
+      }
+      for (const f of profilePhoto) {
+        allFiles.push({ file: f.file, type: "profile_photo" });
+      }
+      for (const f of workPhotos) {
+        allFiles.push({ file: f.file, type: "photo" });
+      }
+
+      if (allFiles.length > 0) {
+        setUploadProgress(`Uploading files (0/${allFiles.length})...`);
+
+        for (let i = 0; i < allFiles.length; i++) {
+          setUploadProgress(`Uploading files (${i + 1}/${allFiles.length})...`);
+          const fd = new FormData();
+          fd.append("file", allFiles[i].file);
+          fd.append("type", allFiles[i].type);
+          fd.append("email", account.email);
+          if (allFiles[i].certName) fd.append("cert_name", allFiles[i].certName!);
+
+          try {
+            await fetch("/api/upload", { method: "POST", body: fd });
+          } catch {
+            // Silently continue — files can be re-uploaded from dashboard
+          }
+        }
+
+        setUploadProgress(null);
       }
 
       // Success — show "check your email" screen (no auto-redirect).
@@ -395,12 +448,47 @@ export function RegisterWizard() {
       {step === 3 && (
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
-            Upload your credentials and work photos. Files are stored in Supabase Storage and visible to admins for verification.
+            Upload your credentials and work photos. These help build trust with customers and speed up verification.
           </p>
-          <FileDrop label="PIRB certificate (PDF or image)" icon="📜" required />
-          <FileDrop label="Additional certifications" icon="📂" multiple help="SESSA, LPGSA, etc." />
-          <FileDrop label="Profile photo" icon="👤" />
-          <FileDrop label="Work photos" icon="📸" multiple max={10} help="Up to 10 images of completed jobs" />
+          <p className="text-xs text-gray-500">
+            You can also upload files later from your dashboard.
+          </p>
+          <FileDrop
+            label="PIRB certificate (PDF or image)"
+            icon="📜"
+            accept="image/*,.pdf"
+            files={pirbCert}
+            onFilesChange={setPirbCert}
+            maxFiles={1}
+          />
+          <FileDrop
+            label="Additional certifications"
+            icon="📂"
+            accept="image/*,.pdf"
+            files={otherCerts}
+            onFilesChange={setOtherCerts}
+            multiple
+            maxFiles={5}
+            help="SESSA, LPGSA, etc."
+          />
+          <FileDrop
+            label="Profile photo"
+            icon="👤"
+            accept="image/*"
+            files={profilePhoto}
+            onFilesChange={setProfilePhoto}
+            maxFiles={1}
+          />
+          <FileDrop
+            label="Work photos"
+            icon="📸"
+            accept="image/*"
+            files={workPhotos}
+            onFilesChange={setWorkPhotos}
+            multiple
+            maxFiles={10}
+            help="Up to 10 images of completed jobs"
+          />
         </div>
       )}
 
@@ -466,7 +554,7 @@ export function RegisterWizard() {
               className="btn-primary"
             >
               {submitting
-                ? "Submitting..."
+                ? uploadProgress || "Submitting..."
                 : step === 3
                   ? "Submit application →"
                   : "Continue →"}
@@ -506,31 +594,110 @@ function Field({
 function FileDrop({
   label,
   icon,
+  accept,
   multiple,
-  max,
+  maxFiles = 10,
   help,
-  required,
+  files,
+  onFilesChange,
 }: {
   label: string;
   icon: string;
+  accept?: string;
   multiple?: boolean;
-  max?: number;
+  maxFiles?: number;
   help?: string;
-  required?: boolean;
+  files: FileWithPreview[];
+  onFilesChange: (files: FileWithPreview[]) => void;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function handleSelect(selected: FileList | null) {
+    if (!selected) return;
+
+    const newFiles: FileWithPreview[] = Array.from(selected)
+      .slice(0, maxFiles - files.length)
+      .filter((f) => f.size <= 10 * 1024 * 1024) // 10MB limit
+      .map((f) => ({
+        file: f,
+        preview: f.type.startsWith("image/") ? URL.createObjectURL(f) : "",
+      }));
+
+    if (multiple) {
+      onFilesChange([...files, ...newFiles].slice(0, maxFiles));
+    } else {
+      // Revoke old preview
+      files.forEach((f) => f.preview && URL.revokeObjectURL(f.preview));
+      onFilesChange(newFiles.slice(0, 1));
+    }
+
+    if (inputRef.current) inputRef.current.value = "";
+  }
+
+  function removeFile(index: number) {
+    const removed = files[index];
+    if (removed.preview) URL.revokeObjectURL(removed.preview);
+    onFilesChange(files.filter((_, i) => i !== index));
+  }
+
+  const canAdd = files.length < maxFiles;
+
   return (
     <div>
-      <div className="text-xs font-semibold text-gray-700 mb-1">
-        {label} {required && <span className="text-red-500">*</span>}
-      </div>
-      <label className="block border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer hover:border-brand hover:bg-brand-light transition-colors">
-        <div className="text-3xl text-gray-400 mb-2">{icon}</div>
-        <div className="text-sm text-gray-600">
-          <strong className="text-brand">Click to upload</strong> or drag &amp; drop
+      <div className="text-xs font-semibold text-gray-700 mb-1">{label}</div>
+
+      {/* File previews */}
+      {files.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-2">
+          {files.map((f, i) => (
+            <div
+              key={i}
+              className="relative group flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2"
+            >
+              {f.preview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={f.preview}
+                  alt={f.file.name}
+                  className="w-10 h-10 object-cover rounded"
+                />
+              ) : (
+                <span className="text-lg">📄</span>
+              )}
+              <span className="text-xs text-gray-700 max-w-[120px] truncate">
+                {f.file.name}
+              </span>
+              <button
+                type="button"
+                onClick={() => removeFile(i)}
+                className="ml-1 text-red-400 hover:text-red-600 text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
         </div>
-        {help && <div className="text-xs text-gray-500 mt-1">{help}</div>}
-        <input type="file" multiple={multiple} className="hidden" />
-      </label>
+      )}
+
+      {/* Upload area */}
+      {canAdd && (
+        <label className="block border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer hover:border-brand hover:bg-brand-light transition-colors">
+          <div className="text-3xl text-gray-400 mb-2">{icon}</div>
+          <div className="text-sm text-gray-600">
+            <strong className="text-brand">Click to upload</strong> or drag
+            &amp; drop
+          </div>
+          {help && <div className="text-xs text-gray-500 mt-1">{help}</div>}
+          <input
+            ref={inputRef}
+            type="file"
+            accept={accept}
+            multiple={multiple}
+            className="hidden"
+            onChange={(e) => handleSelect(e.target.files)}
+          />
+        </label>
+      )}
     </div>
   );
 }

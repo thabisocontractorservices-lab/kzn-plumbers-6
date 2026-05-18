@@ -26,6 +26,7 @@ type Plumber = {
   is_certified: boolean;
   is_verified: boolean;
   profile_views: number;
+  has_photos?: boolean;
   ratings?: { internal_rating: number | null; internal_count: number };
 };
 
@@ -61,6 +62,16 @@ export default function DashboardPage() {
 
       if (!mounted) return;
       const p = plumberRes.data as Plumber | null;
+
+      // Check if plumber has photos (for completeness %)
+      if (p) {
+        const { count } = await supabase
+          .from("photos")
+          .select("id", { count: "exact", head: true })
+          .eq("plumber_id", p.id);
+        (p as Plumber).has_photos = (count ?? 0) > 0;
+      }
+
       setPlumber(p);
       setProfileName(profileRes.data?.full_name ?? user.email);
 
@@ -194,6 +205,7 @@ function Sidebar() {
         {[
           { href: "/dashboard", icon: "📊", label: "Overview" },
           { href: "/dashboard/profile", icon: "👤", label: "Edit Profile" },
+          { href: "/dashboard/uploads", icon: "📸", label: "Photos & Certs" },
           { href: "/dashboard/bookings", icon: "📅", label: "Bookings" },
           { href: "/dashboard/reviews", icon: "⭐", label: "Reviews" },
         ].map((i) => (
@@ -285,6 +297,7 @@ function computeCompleteness(p: Plumber): number {
     p.google_calendar_url,
     p.pirb_number,
     p.is_certified,
+    p.has_photos,
   ];
   return Math.round((checks.filter(Boolean).length / checks.length) * 100);
 }
