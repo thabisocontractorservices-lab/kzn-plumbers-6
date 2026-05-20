@@ -21,13 +21,12 @@ export async function Navbar() {
   return (
     <nav className="bg-brand sticky top-0 z-40 shadow-md relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
-        <Link href="/" className="flex items-center gap-2 sm:gap-3 min-w-0">
-          <div className="w-8 h-8 sm:w-9 sm:h-9 bg-white rounded-lg flex items-center justify-center text-lg sm:text-xl shrink-0">
-            🔧
-          </div>
-          <span className="text-white font-bold text-base sm:text-lg tracking-tight truncate">
-            KZN<span className="text-sky-300">Plumbers</span>
-          </span>
+        <Link href="/" className="flex items-center min-w-0">
+          <img
+            src="/logo.svg"
+            alt="KZN Plumbers"
+            className="h-8 sm:h-9 w-auto"
+          />
         </Link>
 
         {/* Desktop nav links */}
