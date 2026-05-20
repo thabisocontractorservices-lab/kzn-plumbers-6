@@ -6,6 +6,7 @@ import { supabase } from "@/src/supabaseClient";
 import { useAuthGate } from "@/lib/useAuthGate";
 import { FileUploader } from "@/components/FileUploader";
 import { DashboardLoading } from "@/components/DashboardLoading";
+import { DashboardNav } from "@/components/DashboardNav";
 
 type Photo = {
   id: string;
@@ -90,8 +91,8 @@ export default function UploadsPage() {
   const workPhotos = photos.filter((p) => !p.is_profile_photo);
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8 grid lg:grid-cols-[240px_1fr] gap-6">
-      <Sidebar />
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 grid lg:grid-cols-[240px_1fr] gap-6">
+      <DashboardNav />
 
       <div>
         <header className="mb-8">
@@ -187,31 +188,3 @@ export default function UploadsPage() {
   );
 }
 
-function Sidebar() {
-  return (
-    <aside className="bg-white border border-gray-200 rounded-xl p-3 h-fit">
-      <nav className="flex flex-col gap-1">
-        {[
-          { href: "/dashboard", icon: "📊", label: "Overview" },
-          { href: "/dashboard/profile", icon: "👤", label: "Edit Profile" },
-          { href: "/dashboard/uploads", icon: "📸", label: "Photos & Certs" },
-          { href: "/dashboard/bookings", icon: "📅", label: "Bookings" },
-          { href: "/dashboard/reviews", icon: "⭐", label: "Reviews" },
-        ].map((i) => (
-          <Link
-            key={i.href}
-            href={i.href}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
-              i.href === "/dashboard/uploads"
-                ? "bg-brand-light text-brand"
-                : "text-gray-700 hover:bg-gray-50 hover:text-gray-900"
-            }`}
-          >
-            <span>{i.icon}</span>
-            {i.label}
-          </Link>
-        ))}
-      </nav>
-    </aside>
-  );
-}

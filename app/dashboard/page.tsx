@@ -9,6 +9,7 @@ import { useAuthGate } from "@/lib/useAuthGate";
 import { AvailabilityToggle } from "@/components/AvailabilityToggle";
 import { ReviewLinkSection } from "@/components/ReviewLinkSection";
 import { DashboardLoading } from "@/components/DashboardLoading";
+import { DashboardNav } from "@/components/DashboardNav";
 
 type Plumber = {
   id: string;
@@ -122,8 +123,8 @@ export default function DashboardPage() {
   const shortLink = `${typeof window !== "undefined" ? window.location.origin : ""}/review/${plumber.slug ?? plumber.id}`;
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8 grid lg:grid-cols-[240px_1fr] gap-6">
-      <Sidebar />
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 grid lg:grid-cols-[240px_1fr] gap-6">
+      <DashboardNav />
 
       <div>
         <header className="flex items-center justify-between flex-wrap gap-4 mb-8">
@@ -198,30 +199,6 @@ export default function DashboardPage() {
   );
 }
 
-function Sidebar() {
-  return (
-    <aside className="bg-white border border-gray-200 rounded-xl p-3 h-fit">
-      <nav className="flex flex-col gap-1">
-        {[
-          { href: "/dashboard", icon: "📊", label: "Overview" },
-          { href: "/dashboard/profile", icon: "👤", label: "Edit Profile" },
-          { href: "/dashboard/uploads", icon: "📸", label: "Photos & Certs" },
-          { href: "/dashboard/bookings", icon: "📅", label: "Bookings" },
-          { href: "/dashboard/reviews", icon: "⭐", label: "Reviews" },
-        ].map((i) => (
-          <Link
-            key={i.href}
-            href={i.href}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 hover:text-gray-900 font-medium"
-          >
-            <span>{i.icon}</span>
-            {i.label}
-          </Link>
-        ))}
-      </nav>
-    </aside>
-  );
-}
 
 function Stat({ icon, value, label, color }: { icon: string; value: string | number; label: string; color: string }) {
   return (

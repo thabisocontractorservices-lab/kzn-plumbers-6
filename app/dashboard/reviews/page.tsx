@@ -7,6 +7,7 @@ import { reviewUrl } from "@/lib/google/places";
 import { useAuthGate } from "@/lib/useAuthGate";
 import { ReviewLinkSection } from "@/components/ReviewLinkSection";
 import { DashboardLoading } from "@/components/DashboardLoading";
+import { DashboardNav } from "@/components/DashboardNav";
 
 type Plumber = {
   id: string;
@@ -80,7 +81,9 @@ export default function ReviewsPage() {
   const shortLink = `${typeof window !== "undefined" ? window.location.origin : ""}/review/${plumber.slug ?? plumber.id}`;
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 grid lg:grid-cols-[240px_1fr] gap-6">
+      <DashboardNav />
+      <div className="space-y-6">
       <div>
         <h1 className="font-display text-3xl mb-1">Reviews</h1>
         <p className="text-gray-500 text-sm">
@@ -136,6 +139,7 @@ export default function ReviewsPage() {
             ))
           )}
         </Section>
+      </div>
       </div>
     </div>
   );

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/src/supabaseClient";
 import { useAuthGate } from "@/lib/useAuthGate";
 import { DashboardLoading } from "@/components/DashboardLoading";
+import { DashboardNav } from "@/components/DashboardNav";
 
 type Booking = {
   id: string;
@@ -58,13 +59,15 @@ export default function BookingsPage() {
   if (!user) return null;
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 grid lg:grid-cols-[240px_1fr] gap-6">
+      <DashboardNav />
+      <div>
       <h1 className="font-display text-3xl mb-6">All bookings</h1>
-      <div className="panel">
+      <div className="panel overflow-x-auto">
         {bookings.length === 0 ? (
           <p className="text-sm text-gray-500">No bookings yet.</p>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[600px]">
             <thead className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200">
               <tr>
                 <th className="py-3">Customer</th>
@@ -98,6 +101,7 @@ export default function BookingsPage() {
             </tbody>
           </table>
         )}
+      </div>
       </div>
     </div>
   );
