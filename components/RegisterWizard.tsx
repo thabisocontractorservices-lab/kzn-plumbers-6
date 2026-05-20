@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/src/supabaseClient";
-import { KZN_AREAS, SPECIALTIES, formatWhatsApp } from "@/lib/utils";
+import { KZN_AREAS, SPECIALTIES, formatWhatsApp, isValidSAPhone } from "@/lib/utils";
 
 type FileWithPreview = {
   file: File;
@@ -67,8 +67,12 @@ export function RegisterWizard() {
     if (s === 1) {
       if (!account.full_name.trim()) return "Please enter your full name.";
       if (!account.email.trim()) return "Please enter your email.";
-      if (!account.phone.trim()) return "Please enter your phone number.";
+      if (!account.phone.trim()) return "Please enter your cellphone number.";
+      if (!isValidSAPhone(account.phone))
+        return "Please enter a valid SA cellphone number (e.g. 082 123 4567 or +27 82 123 4567).";
       if (!account.whatsapp.trim()) return "Please enter your business WhatsApp number.";
+      if (!isValidSAPhone(account.whatsapp))
+        return "Please enter a valid SA WhatsApp number (e.g. 082 123 4567 or +27 82 123 4567).";
       if (account.password.length < 6)
         return "Password must be at least 6 characters.";
       if (account.password !== account.confirm)
@@ -283,23 +287,25 @@ export function RegisterWizard() {
                 placeholder="you@example.com"
               />
             </Field>
-            <Field label="Phone">
+            <Field label="Cellphone number">
               <input
+                type="tel"
                 required
                 value={account.phone}
                 onChange={(e) => setAccount({ ...account, phone: e.target.value })}
                 className="input"
-                placeholder="+27 82 ..."
+                placeholder="082 123 4567"
               />
             </Field>
           </div>
-          <Field label="Business WhatsApp number" hint="Customers will message you here for bookings & enquiries.">
+          <Field label="Business WhatsApp number" hint="Customers will message you here for bookings & enquiries. Must be a SA cellphone number.">
             <input
+              type="tel"
               required
               value={account.whatsapp}
               onChange={(e) => setAccount({ ...account, whatsapp: e.target.value })}
               className="input"
-              placeholder="+27 82 ..."
+              placeholder="082 123 4567"
             />
           </Field>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

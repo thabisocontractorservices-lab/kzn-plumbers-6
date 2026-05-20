@@ -15,6 +15,22 @@ export function formatWhatsApp(phone: string): string {
   return digits;
 }
 
+/**
+ * Validate a South African cellphone number.
+ * Accepts: 0821234567, +27821234567, 27821234567, 082 123 4567, etc.
+ * Must be 9-12 digits after stripping non-digits, and resolve to a
+ * valid 27XXXXXXXXX (11 digits) mobile number (starts with 6/7/8 after 27).
+ */
+export function isValidSAPhone(phone: string): boolean {
+  if (!phone) return false;
+  const digits = formatWhatsApp(phone);
+  if (digits.length !== 11) return false;
+  if (!digits.startsWith("27")) return false;
+  // SA mobile: third digit must be 6, 7, or 8
+  const mobilePrefix = digits[2];
+  return ["6", "7", "8"].includes(mobilePrefix);
+}
+
 /** Build a wa.me link with optional pre-filled text. */
 export function whatsAppLink(phone: string, text?: string): string {
   const num = formatWhatsApp(phone);

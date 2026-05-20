@@ -9,7 +9,7 @@
 
 const RESEND_API = "https://api.resend.com/emails";
 const ADMIN_EMAIL =
-  process.env.ADMIN_EMAIL || "thabisocontractorservices@gmail.com";
+  process.env.ADMIN_EMAIL || "admin@kznplumbers.co.za";
 const FROM_EMAIL =
   process.env.FROM_EMAIL || "KZN Plumbers <noreply@kznplumbers.co.za>";
 
