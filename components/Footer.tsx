@@ -45,9 +45,8 @@ export function Footer() {
         />
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 py-6 border-t border-white/10 flex justify-between flex-wrap gap-2 text-xs">
+      <div className="max-w-7xl mx-auto px-6 py-6 border-t border-white/10 text-xs">
         <div>© {new Date().getFullYear()} KZN Plumbers Directory · A South African business</div>
-        <div>Built with Next.js + Supabase · Deployed on Vercel</div>
       </div>
     </footer>
   );
