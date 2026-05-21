@@ -61,10 +61,10 @@ export default async function ClaimPage({
             <p className="text-gray-600 text-sm mb-6">
               If you believe this is an error, please contact us at{" "}
               <a
-                href="mailto:thabisocontractorservices@gmail.com"
+                href="mailto:admin@kznplumbers.co.za"
                 className="text-brand underline"
               >
-                thabisocontractorservices@gmail.com
+                admin@kznplumbers.co.za
               </a>
             </p>
             <a href={`/plumber/${plumber.slug ?? plumber.id}`} className="btn-primary">
