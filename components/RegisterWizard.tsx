@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/src/supabaseClient";
 import { KZN_AREAS, SPECIALTIES, formatWhatsApp, isValidSAPhone } from "@/lib/utils";
@@ -35,6 +35,7 @@ export function RegisterWizard() {
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loggedInEmail, setLoggedInEmail] = useState<string | null>(null);
   const [account, setAccount] = useState<Step1>({
     full_name: "",
     email: "",
@@ -43,6 +44,22 @@ export function RegisterWizard() {
     password: "",
     confirm: "",
   });
+
+  // If user is already logged in, skip to step 2 (business details)
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setLoggedInEmail(session.user.email ?? null);
+        setAccount((prev) => ({
+          ...prev,
+          email: session.user.email ?? "",
+          full_name: session.user.user_metadata?.full_name ?? "",
+        }));
+        setStep(2);
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [biz, setBiz] = useState<Step2>({
     trading_name: "",
     area: "Durban North",
@@ -64,7 +81,8 @@ export function RegisterWizard() {
   // Validate the current step before allowing user to proceed.
   // Returns the human-readable error or null if valid.
   function validateStep(s: number): string | null {
-    if (s === 1) {
+    if (s === 1 && !loggedInEmail) {
+      // Only validate account fields if user is NOT already logged in
       if (!account.full_name.trim()) return "Please enter your full name.";
       if (!account.email.trim()) return "Please enter your email.";
       if (!account.phone.trim()) return "Please enter your cellphone number.";
@@ -103,11 +121,13 @@ export function RegisterWizard() {
     setError(null);
 
     // Re-validate everything before the network call.
-    const step1Err = validateStep(1);
-    if (step1Err) {
-      setError(step1Err);
-      setStep(1);
-      return;
+    if (!loggedInEmail) {
+      const step1Err = validateStep(1);
+      if (step1Err) {
+        setError(step1Err);
+        setStep(1);
+        return;
+      }
     }
     const step2Err = validateStep(2);
     if (step2Err) {
@@ -119,42 +139,70 @@ export function RegisterWizard() {
     setSubmitting(true);
 
     try {
-      // ── Step 1: Client-side signUp() ─────────────────────────────────────
-      // This creates the auth user AND sends the confirmation email using the
-      // custom Supabase email template (with {{ .ConfirmationURL }}).
-      //
-      // emailRedirectTo MUST be passed explicitly — otherwise Supabase falls
-      // back to the dashboard "Site URL" which can drift. Whatever URL we
-      // pass here must also be in Authentication → URL Configuration →
-      // Redirect URLs (allow-list) in the Supabase dashboard.
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: account.email,
-        password: account.password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
-          data: {
-            full_name: account.full_name,
-            role: "plumber",
+      // ── Check if user is already logged in ──────────────────────────────
+      // If they're already authenticated (e.g. logged-in plumber adding a
+      // listing, or admin testing), skip signUp and use their existing session.
+      const { data: { session: existingSession } } = await supabase.auth.getSession();
+      const alreadyLoggedIn = !!existingSession?.user;
+
+      let userEmail = account.email;
+
+      if (!alreadyLoggedIn) {
+        // ── Step 1: Client-side signUp() ─────────────────────────────────
+        // This creates the auth user AND sends the confirmation email.
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+          email: account.email,
+          password: account.password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+            data: {
+              full_name: account.full_name,
+              role: "plumber",
+            },
           },
-        },
-      });
+        });
 
-      if (signUpError) {
-        const msg = signUpError.message.toLowerCase();
+        if (signUpError) {
+          const msg = signUpError.message.toLowerCase();
 
-        // Rate-limited by Supabase
-        if (msg.includes("security purposes") || msg.includes("rate limit") || msg.includes("request this after")) {
-          const seconds = msg.match(/after (\d+) second/)?.[1] ?? "60";
+          // Rate-limited by Supabase
+          if (msg.includes("security purposes") || msg.includes("rate limit") || msg.includes("request this after")) {
+            const seconds = msg.match(/after (\d+) second/)?.[1] ?? "60";
+            setError(
+              `Too many attempts. Please wait ${seconds} seconds and try again. ` +
+              `If you already registered, check your email for a confirmation link and then log in instead.`
+            );
+            setSubmitting(false);
+            return;
+          }
+
+          // User already exists
+          if (msg.includes("already registered") || msg.includes("already been registered") || msg.includes("user already exists")) {
+            setError(
+              "An account with this email already exists. Check your inbox for a confirmation email, " +
+              "then go to the login page to sign in."
+            );
+            setSubmitting(false);
+            return;
+          }
+
+          setError(signUpError.message);
+          setSubmitting(false);
+          return;
+        }
+
+        // Supabase may return a "fake" user with identities=[] if email
+        // already exists (to prevent email enumeration). Detect this.
+        if (!signUpData.user) {
           setError(
-            `Supabase is rate-limiting sign-ups. Please wait ${seconds} seconds and try again. ` +
-            `If you already registered, check your email for a confirmation link and then log in instead.`
+            "Could not create account. If you already registered with this email, " +
+            "check your inbox for a confirmation email, then go to the login page."
           );
           setSubmitting(false);
           return;
         }
 
-        // User already exists
-        if (msg.includes("already registered") || msg.includes("already been registered") || msg.includes("user already exists")) {
+        if (signUpData.user.identities?.length === 0) {
           setError(
             "An account with this email already exists. Check your inbox for a confirmation email, " +
             "then go to the login page to sign in."
@@ -162,38 +210,18 @@ export function RegisterWizard() {
           setSubmitting(false);
           return;
         }
-
-        setError(signUpError.message);
-        setSubmitting(false);
-        return;
-      }
-
-      // Supabase returns the user even when email confirmation is required
-      // (session will be null until they confirm).
-      // Note: Supabase may return a "fake" user with identities=[] if email
-      // already exists (to prevent email enumeration). Detect this.
-      if (!signUpData.user) {
-        setError("Could not create account. Please try again.");
-        setSubmitting(false);
-        return;
-      }
-
-      if (signUpData.user.identities?.length === 0) {
-        setError(
-          "An account with this email already exists. Check your inbox for a confirmation email, " +
-          "then go to the login page to sign in."
-        );
-        setSubmitting(false);
-        return;
+      } else {
+        // Already logged in — use their email
+        userEmail = existingSession.user.email ?? account.email;
       }
 
       // ── Step 2: Server route inserts plumber row ─────────────────────────
-      // Uses service-role to bypass RLS (user has no session yet).
+      // Uses service-role to bypass RLS (user may have no session yet).
       const res = await fetch("/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: account.email,
+          email: userEmail,
           phone: account.phone,
           whatsapp: account.whatsapp,
           business: {
@@ -245,7 +273,7 @@ export function RegisterWizard() {
           const fd = new FormData();
           fd.append("file", allFiles[i].file);
           fd.append("type", allFiles[i].type);
-          fd.append("email", account.email);
+          fd.append("email", userEmail);
           if (allFiles[i].certName) fd.append("cert_name", allFiles[i].certName!);
 
           try {
@@ -258,8 +286,14 @@ export function RegisterWizard() {
         setUploadProgress(null);
       }
 
-      // Success — show "check your email" screen (no auto-redirect).
+      // Success
       setSubmitting(false);
+      if (alreadyLoggedIn) {
+        // Already logged in — go straight to dashboard (hard redirect)
+        window.location.href = "/dashboard";
+        return;
+      }
+      // New user — show "check your email" screen
       setStep(4);
     } catch {
       setError("Network error. Please check your connection and try again.");
@@ -299,7 +333,15 @@ export function RegisterWizard() {
         <h3 className="text-base font-semibold mb-5">{stepTitle}</h3>
       )}
 
-      {step === 1 && (
+      {step === 1 && loggedInEmail && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-5 text-center">
+          <div className="text-3xl mb-2">✓</div>
+          <p className="font-semibold text-green-800">Signed in as {loggedInEmail}</p>
+          <p className="text-sm text-green-700 mt-1">Click Continue to set up your business profile.</p>
+        </div>
+      )}
+
+      {step === 1 && !loggedInEmail && (
         <div className="space-y-3">
           <Field label="Full name">
             <input

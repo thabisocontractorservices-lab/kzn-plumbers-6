@@ -18,10 +18,12 @@ export function LoginForm() {
     setSubmitting(true);
     setError(null);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setSubmitting(false);
-    if (error) return setError(error.message);
-    router.push(role === "plumber" ? "/dashboard" : "/");
-    router.refresh();
+    if (error) {
+      setSubmitting(false);
+      return setError(error.message);
+    }
+    // Hard redirect so the server re-reads the session cookie and Navbar updates
+    window.location.href = role === "plumber" ? "/dashboard" : "/";
   }
 
   async function loginGoogle() {

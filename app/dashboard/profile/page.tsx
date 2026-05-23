@@ -28,6 +28,8 @@ export default function EditProfilePage() {
       if (!mounted) return;
 
       if (!data) {
+        // User is logged in but has no plumber profile — send to register
+        // (RegisterWizard detects the session and skips to step 2)
         router.replace("/register");
         return;
       }
