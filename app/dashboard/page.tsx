@@ -27,7 +27,11 @@ type Plumber = {
   is_certified: boolean;
   is_verified: boolean;
   profile_views: number;
+  whatsapp_number: string | null;
+  hourly_rate: number | null;
   has_photos?: boolean;
+  has_profile_photo?: boolean;
+  has_certs?: boolean;
   ratings?: { internal_rating: number | null; internal_count: number };
 };
 
@@ -64,13 +68,26 @@ export default function DashboardPage() {
       if (!mounted) return;
       const p = plumberRes.data as Plumber | null;
 
-      // Check if plumber has photos (for completeness %)
+      // Check photos + certs for completeness %
       if (p) {
-        const { count } = await supabase
-          .from("photos")
-          .select("id", { count: "exact", head: true })
-          .eq("plumber_id", p.id);
-        (p as Plumber).has_photos = (count ?? 0) > 0;
+        const [photosRes, profilePhotoRes, certsRes] = await Promise.all([
+          supabase
+            .from("photos")
+            .select("id", { count: "exact", head: true })
+            .eq("plumber_id", p.id),
+          supabase
+            .from("photos")
+            .select("id", { count: "exact", head: true })
+            .eq("plumber_id", p.id)
+            .eq("is_profile_photo", true),
+          supabase
+            .from("certifications")
+            .select("id", { count: "exact", head: true })
+            .eq("plumber_id", p.id),
+        ]);
+        (p as Plumber).has_photos = (photosRes.count ?? 0) > 0;
+        (p as Plumber).has_profile_photo = (profilePhotoRes.count ?? 0) > 0;
+        (p as Plumber).has_certs = (certsRes.count ?? 0) > 0;
       }
 
       setPlumber(p);
@@ -165,18 +182,43 @@ export default function DashboardPage() {
         <div className="panel mb-6">
           <div className="flex justify-between items-center mb-2">
             <strong>Profile completeness</strong>
-            <span className="font-bold text-brand">{completeness}%</span>
+            <span className="font-bold text-brand">{completeness.percent}%</span>
           </div>
           <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-brand to-teal transition-all"
-              style={{ width: `${completeness}%` }}
+              className={`h-full transition-all ${
+                completeness.percent === 100
+                  ? "bg-gradient-to-r from-green-400 to-teal"
+                  : "bg-gradient-to-r from-brand to-teal"
+              }`}
+              style={{ width: `${completeness.percent}%` }}
             />
           </div>
-          {completeness < 100 && (
-            <p className="text-xs text-gray-500 mt-2">
-              Complete your profile to unlock 3.4× more enquiries.
+          {completeness.percent === 100 ? (
+            <p className="text-xs text-green-600 mt-2 font-medium">
+              ✓ Your profile is 100% complete — looking great!
             </p>
+          ) : (
+            <>
+              <p className="text-xs text-gray-500 mt-2">
+                Complete your profile to unlock 3.4× more enquiries.
+              </p>
+              {completeness.missing.length > 0 && (
+                <ul className="mt-3 space-y-1.5">
+                  {completeness.missing.slice(0, 3).map((item) => (
+                    <li key={item} className="flex items-center gap-2 text-sm text-gray-600">
+                      <span className="w-5 h-5 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center text-xs shrink-0">○</span>
+                      {item}
+                    </li>
+                  ))}
+                  {completeness.missing.length > 3 && (
+                    <li className="text-xs text-gray-400 pl-7">
+                      +{completeness.missing.length - 3} more
+                    </li>
+                  )}
+                </ul>
+              )}
+            </>
           )}
         </div>
 
@@ -266,15 +308,22 @@ function statusClass(s: string) {
   );
 }
 
-function computeCompleteness(p: Plumber): number {
-  const checks = [
-    p.about,
-    p.specialties.length > 0,
-    p.google_place_id,
-    p.google_calendar_url,
-    p.pirb_number,
-    p.is_certified,
-    p.has_photos,
+type CompletenessResult = { percent: number; missing: string[] };
+
+function computeCompleteness(p: Plumber): CompletenessResult {
+  const criteria: [boolean, string, string][] = [
+    // [isMet, label, link to fix it]
+    [!!p.about && p.about.length >= 20, "Add a business description", "/dashboard/profile"],
+    [p.specialties.length > 0, "Add at least one specialty", "/dashboard/profile"],
+    [!!p.whatsapp_number, "Add a phone number", "/dashboard/profile"],
+    [!!p.pirb_number, "Add your PIRB number", "/dashboard/profile"],
+    [!!p.has_profile_photo, "Upload a profile photo", "/dashboard/uploads"],
+    [!!p.has_photos, "Upload work photos", "/dashboard/uploads"],
+    [!!p.has_certs, "Upload certifications", "/dashboard/uploads"],
+    [!!p.hourly_rate, "Set your hourly rate", "/dashboard/profile"],
   ];
-  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+
+  const met = criteria.filter(([ok]) => ok).length;
+  const missing = criteria.filter(([ok]) => !ok).map(([, label]) => label);
+  return { percent: Math.round((met / criteria.length) * 100), missing };
 }
