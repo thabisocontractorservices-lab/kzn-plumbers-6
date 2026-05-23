@@ -140,6 +140,29 @@ export function RegisterWizard() {
       });
 
       if (signUpError) {
+        const msg = signUpError.message.toLowerCase();
+
+        // Rate-limited by Supabase
+        if (msg.includes("security purposes") || msg.includes("rate limit") || msg.includes("request this after")) {
+          const seconds = msg.match(/after (\d+) second/)?.[1] ?? "60";
+          setError(
+            `Supabase is rate-limiting sign-ups. Please wait ${seconds} seconds and try again. ` +
+            `If you already registered, check your email for a confirmation link and then log in instead.`
+          );
+          setSubmitting(false);
+          return;
+        }
+
+        // User already exists
+        if (msg.includes("already registered") || msg.includes("already been registered") || msg.includes("user already exists")) {
+          setError(
+            "An account with this email already exists. Check your inbox for a confirmation email, " +
+            "then go to the login page to sign in."
+          );
+          setSubmitting(false);
+          return;
+        }
+
         setError(signUpError.message);
         setSubmitting(false);
         return;
@@ -147,8 +170,19 @@ export function RegisterWizard() {
 
       // Supabase returns the user even when email confirmation is required
       // (session will be null until they confirm).
+      // Note: Supabase may return a "fake" user with identities=[] if email
+      // already exists (to prevent email enumeration). Detect this.
       if (!signUpData.user) {
         setError("Could not create account. Please try again.");
+        setSubmitting(false);
+        return;
+      }
+
+      if (signUpData.user.identities?.length === 0) {
+        setError(
+          "An account with this email already exists. Check your inbox for a confirmation email, " +
+          "then go to the login page to sign in."
+        );
         setSubmitting(false);
         return;
       }
@@ -298,9 +332,10 @@ export function RegisterWizard() {
               />
             </Field>
           </div>
-          <Field label="Business WhatsApp number" hint="Customers will message you here for bookings & enquiries. Must be a SA cellphone number.">
+          <Field label="Business WhatsApp number" hint="Enter your SA cellphone number (not a website). Customers will WhatsApp you for bookings.">
             <input
               type="tel"
+              inputMode="tel"
               required
               value={account.whatsapp}
               onChange={(e) => setAccount({ ...account, whatsapp: e.target.value })}
@@ -540,8 +575,13 @@ export function RegisterWizard() {
         <>
           {error && (
             <div className="mt-6 px-4 py-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
-              <strong className="block mb-0.5">Couldn't continue</strong>
+              <strong className="block mb-0.5">Couldn&apos;t continue</strong>
               {error}
+              {(error.includes("already exists") || error.includes("already registered")) && (
+                <a href="/login" className="block mt-2 text-brand font-semibold underline">
+                  Go to login →
+                </a>
+              )}
             </div>
           )}
           <div className="flex justify-between gap-3 mt-6 pt-6 border-t border-gray-100">

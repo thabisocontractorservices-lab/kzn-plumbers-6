@@ -11,7 +11,7 @@ const RESEND_API = "https://api.resend.com/emails";
 const ADMIN_EMAIL =
   process.env.ADMIN_EMAIL || "admin@kznplumbers.co.za";
 const FROM_EMAIL =
-  process.env.FROM_EMAIL || "KZN Plumbers <noreply@kznplumbers.co.za>";
+  process.env.FROM_EMAIL || "KZN Plumbers <admin@kznplumbers.co.za>";
 
 type NotifyPayload = {
   subject: string;
