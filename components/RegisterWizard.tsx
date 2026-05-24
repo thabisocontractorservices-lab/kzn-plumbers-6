@@ -239,7 +239,7 @@ export function RegisterWizard() {
 
       const data = await res.json();
 
-      if (!res.ok && !data.partial) {
+      if (!res.ok) {
         setError(data.error ?? "Registration failed. Please try again.");
         setSubmitting(false);
         return;
@@ -286,14 +286,8 @@ export function RegisterWizard() {
         setUploadProgress(null);
       }
 
-      // Success
+      // Success — show appropriate screen
       setSubmitting(false);
-      if (alreadyLoggedIn) {
-        // Already logged in — go straight to dashboard (hard redirect)
-        window.location.href = "/dashboard";
-        return;
-      }
-      // New user — show "check your email" screen
       setStep(4);
     } catch {
       setError("Network error. Please check your connection and try again.");
@@ -575,7 +569,40 @@ export function RegisterWizard() {
         </div>
       )}
 
-      {step === 4 && (
+      {step === 4 && loggedInEmail && (
+        <div className="text-center py-6">
+          <div className="w-20 h-20 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-4xl mx-auto mb-6">
+            ✓
+          </div>
+          <h2 className="font-display text-2xl mb-2">Application submitted!</h2>
+          <p className="text-gray-600 mb-6 max-w-md mx-auto">
+            Your business profile for <strong>{biz.trading_name}</strong> has been submitted.
+            Our team will review your application and verify your credentials.
+          </p>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 max-w-md mx-auto mb-6 text-left">
+            <div className="flex gap-3 items-center mb-1">
+              <span className="text-2xl">⏳</span>
+              <strong className="text-amber-900">Under review</strong>
+            </div>
+            <p className="text-sm text-amber-800">
+              Applications are typically reviewed within <strong>24–48 hours</strong>.
+              You&apos;ll receive an email once your profile is approved and live on the directory.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <button onClick={() => { window.location.href = "/dashboard"; }} className="btn-primary">
+              Go to dashboard →
+            </button>
+            <button onClick={() => { window.location.href = "/"; }} className="btn-secondary">
+              Back to directory
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 4 && !loggedInEmail && (
         <div className="text-center py-6">
           <div className="w-20 h-20 rounded-full bg-brand-light text-brand flex items-center justify-center text-4xl mx-auto mb-6">
             ✉️
@@ -603,10 +630,10 @@ export function RegisterWizard() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <button onClick={() => router.push("/login")} className="btn-primary">
+            <button onClick={() => { window.location.href = "/login"; }} className="btn-primary">
               Go to login →
             </button>
-            <button onClick={() => router.push("/")} className="btn-secondary">
+            <button onClick={() => { window.location.href = "/"; }} className="btn-secondary">
               Back to directory
             </button>
           </div>

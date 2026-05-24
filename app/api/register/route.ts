@@ -13,13 +13,10 @@ const supabaseAdmin = createClient(
  * Step 2 of registration — called AFTER the client-side signUp() which
  * creates the auth user and sends the confirmation email.
  *
- * This route uses the service-role client to:
- * 1. Look up the user by email (verify they exist)
- * 2. Update their profile with phone numbers
- * 3. Insert the plumbers row (bypasses RLS)
+ * Uses the service-role client to bypass RLS.
  *
  * Body: {
- *   email: string,           // Used to look up the auth user
+ *   email: string,
  *   phone: string,
  *   whatsapp: string,
  *   business: { trading_name, area, hourly_rate, specialties, is_emergency,
@@ -33,53 +30,54 @@ export async function POST(req: NextRequest) {
 
     // ── Validate ──────────────────────────────────────────────────────────
     if (!email) {
-      return NextResponse.json(
-        { error: "Missing email" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "Missing email" }, { status: 400 });
     }
     if (!business?.trading_name || !business?.area || !business?.specialties?.length) {
       return NextResponse.json(
-        { error: "Missing required business fields" },
+        { error: "Missing required business fields (trading name, area, specialties)" },
         { status: 400 },
       );
     }
 
-    // ── 1. Look up the auth user by email ─────────────────────────────────
-    // The client already called signUp() which created the user + sent
-    // the confirmation email. We just need to find them.
-    const { data: usersData, error: listError } =
-      await supabaseAdmin.auth.admin.listUsers();
+    // ── 1. Find the auth user by email ────────────────────────────────────
+    // Use profiles table (auto-created by trigger) instead of listUsers()
+    // which only returns the first page (50 users).
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .select("id, email")
+      .eq("email", email.toLowerCase())
+      .maybeSingle();
 
-    if (listError) {
-      console.error("List users error:", listError);
-      return NextResponse.json(
-        { error: "Failed to verify account" },
-        { status: 500 },
-      );
+    // Fallback: if profile not found (trigger may not have fired yet or
+    // email casing differs), try getUserByEmail via admin API.
+    let userId: string | null = profile?.id ?? null;
+
+    if (!userId) {
+      const { data: userData } = await supabaseAdmin.auth.admin.getUserByEmail(email);
+      userId = userData?.user?.id ?? null;
     }
 
-    const user = usersData.users.find(
-      (u) => u.email?.toLowerCase() === email.toLowerCase(),
-    );
-
-    if (!user) {
+    if (!userId) {
+      console.error(`[register] User not found for email: ${email}`);
       return NextResponse.json(
-        { error: "Account not found. Please try registering again." },
+        { error: "Account not found. Please try registering again, or log in if you already have an account." },
         { status: 404 },
       );
     }
 
-    const userId = user.id;
-
     // ── 2. Update the profile with phone numbers ──────────────────────────
-    await supabaseAdmin
+    const { error: updateError } = await supabaseAdmin
       .from("profiles")
       .update({
-        phone: phone || null,
+        phone_number: phone || null,
         whatsapp_number: whatsapp || null,
       })
       .eq("id", userId);
+
+    if (updateError) {
+      console.error("[register] Profile update error:", updateError);
+      // Non-fatal — continue to insert plumber row
+    }
 
     // ── 3. Check if plumber row already exists (idempotent) ───────────────
     const { data: existing } = await supabaseAdmin
@@ -92,12 +90,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         message: "Business profile already exists.",
-        userId,
+        plumberId: existing.id,
       });
     }
 
     // ── 4. Insert the plumbers row (bypasses RLS via service role) ─────────
-    const { error: plumberError } = await supabaseAdmin
+    const { data: newPlumber, error: plumberError } = await supabaseAdmin
       .from("plumbers")
       .insert({
         profile_id: userId,
@@ -113,37 +111,36 @@ export async function POST(req: NextRequest) {
         is_certified: !!business.pirb_number,
         is_verified: false,
         availability_status: "available",
-      });
+      })
+      .select("id")
+      .single();
 
     if (plumberError) {
-      console.error("Plumber insert error:", plumberError);
+      console.error("[register] Plumber insert error:", plumberError);
       return NextResponse.json(
-        {
-          error: `Account created but business profile failed: ${plumberError.message}. Contact support with email ${email}.`,
-          partial: true,
-        },
+        { error: `Failed to create business profile: ${plumberError.message}` },
         { status: 500 },
       );
     }
 
-    // ── 5. Notify admin (fire-and-forget — never blocks the response) ────
+    // ── 5. Notify admin (fire-and-forget) ─────────────────────────────────
     notifyNewRegistration({
       tradingName: business.trading_name,
       area: business.area,
       email,
       phone: phone || whatsapp || "—",
       specialties: business.specialties,
-    }).catch(() => {}); // swallow any errors
+    }).catch(() => {});
 
     return NextResponse.json({
       success: true,
-      message: "Registration complete. Please confirm your email to log in.",
-      userId,
+      message: "Registration complete. Your application is under review.",
+      plumberId: newPlumber.id,
     });
   } catch (err) {
-    console.error("Register error:", err);
+    console.error("[register] Unexpected error:", err);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Something went wrong. Please try again or contact support." },
       { status: 500 },
     );
   }

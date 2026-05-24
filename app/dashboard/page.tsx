@@ -117,12 +117,16 @@ export default function DashboardPage() {
   if (!plumber) {
     return (
       <div className="max-w-3xl mx-auto p-12 text-center">
-        <h1 className="font-display text-3xl mb-3">No plumber profile yet</h1>
-        <p className="text-gray-600 mb-6">
-          You're logged in but haven't completed registration.
+        <div className="w-20 h-20 rounded-full bg-brand-light text-brand flex items-center justify-center text-4xl mx-auto mb-6">
+          🔧
+        </div>
+        <h1 className="font-display text-3xl mb-3">Complete your business profile</h1>
+        <p className="text-gray-600 mb-6 max-w-md mx-auto">
+          You&apos;re signed in but don&apos;t have a business listing yet. Set up your profile
+          to appear on the KZN Plumbers directory.
         </p>
         <Link href="/register" className="btn-primary">
-          Complete registration
+          Set up my business →
         </Link>
       </div>
     );

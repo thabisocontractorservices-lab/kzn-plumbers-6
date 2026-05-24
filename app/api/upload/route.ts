@@ -46,15 +46,26 @@ export async function POST(req: NextRequest) {
 
     if (!resolvedPlumberId && email) {
       // Registration flow — look up plumber by email → profile → plumber
-      const { data: usersData } = await supabaseAdmin.auth.admin.listUsers();
-      const user = usersData?.users.find(
-        (u) => u.email?.toLowerCase() === email.toLowerCase(),
-      );
-      if (user) {
+      // Use profiles table instead of listUsers() (which only returns first 50)
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("id")
+        .eq("email", email.toLowerCase())
+        .maybeSingle();
+
+      let profileId = profile?.id ?? null;
+
+      // Fallback: admin API getUserByEmail
+      if (!profileId) {
+        const { data: userData } = await supabaseAdmin.auth.admin.getUserByEmail(email);
+        profileId = userData?.user?.id ?? null;
+      }
+
+      if (profileId) {
         const { data: p } = await supabaseAdmin
           .from("plumbers")
           .select("id")
-          .eq("profile_id", user.id)
+          .eq("profile_id", profileId)
           .maybeSingle();
         resolvedPlumberId = p?.id ?? null;
       }
