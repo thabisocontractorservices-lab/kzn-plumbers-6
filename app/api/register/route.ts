@@ -70,18 +70,32 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── 2. Update the profile with phone numbers ──────────────────────────
-    const { error: updateError } = await supabaseAdmin
+    // ── 2. Ensure profile row exists (trigger may have failed or row was deleted) ──
+    const { data: existingProfile } = await supabaseAdmin
       .from("profiles")
-      .update({
+      .select("id")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (!existingProfile) {
+      // Profile missing — recreate it
+      await supabaseAdmin.from("profiles").insert({
+        id: userId,
+        email: email.toLowerCase(),
+        full_name: business.trading_name,
+        role: "plumber",
         phone_number: phone || null,
         whatsapp_number: whatsapp || null,
-      })
-      .eq("id", userId);
-
-    if (updateError) {
-      console.error("[register] Profile update error:", updateError);
-      // Non-fatal — continue to insert plumber row
+      });
+    } else {
+      // Profile exists — update phone numbers
+      await supabaseAdmin
+        .from("profiles")
+        .update({
+          phone_number: phone || null,
+          whatsapp_number: whatsapp || null,
+        })
+        .eq("id", userId);
     }
 
     // ── 3. Check if plumber row already exists (idempotent) ───────────────
