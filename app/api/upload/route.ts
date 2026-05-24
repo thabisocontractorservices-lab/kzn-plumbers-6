@@ -55,10 +55,15 @@ export async function POST(req: NextRequest) {
 
       let profileId = profile?.id ?? null;
 
-      // Fallback: admin API getUserByEmail
+      // Fallback: search auth users
       if (!profileId) {
-        const { data: userData } = await supabaseAdmin.auth.admin.getUserByEmail(email);
-        profileId = userData?.user?.id ?? null;
+        const { data: usersData } = await supabaseAdmin.auth.admin.listUsers({
+          perPage: 1000,
+        });
+        const match = usersData?.users?.find(
+          (u) => u.email?.toLowerCase() === email.toLowerCase(),
+        );
+        profileId = match?.id ?? null;
       }
 
       if (profileId) {

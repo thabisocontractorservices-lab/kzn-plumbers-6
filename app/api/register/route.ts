@@ -49,12 +49,17 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     // Fallback: if profile not found (trigger may not have fired yet or
-    // email casing differs), try getUserByEmail via admin API.
+    // email casing differs), search auth users directly.
     let userId: string | null = profile?.id ?? null;
 
     if (!userId) {
-      const { data: userData } = await supabaseAdmin.auth.admin.getUserByEmail(email);
-      userId = userData?.user?.id ?? null;
+      const { data: usersData } = await supabaseAdmin.auth.admin.listUsers({
+        perPage: 1000,
+      });
+      const match = usersData?.users?.find(
+        (u) => u.email?.toLowerCase() === email.toLowerCase(),
+      );
+      userId = match?.id ?? null;
     }
 
     if (!userId) {
