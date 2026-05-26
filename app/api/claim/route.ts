@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { revalidatePath } from "next/cache";
 import { notifyNewClaim } from "@/lib/email";
 
 const supabaseAdmin = createClient(
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest) {
     // 3. Fetch the plumber
     const { data: plumber, error: plumberError } = await supabaseAdmin
       .from("plumbers")
-      .select("id, profile_id, whatsapp_number, trading_name")
+      .select("id, profile_id, whatsapp_number, trading_name, slug")
       .eq("id", plumber_id)
       .single();
 
@@ -137,6 +138,11 @@ export async function POST(req: NextRequest) {
         phoneMatch: true,
         status: "auto_approved",
       }).catch(() => {});
+
+      // Revalidate the plumber profile page so claim CTA disappears immediately
+      try {
+        revalidatePath(`/plumber/${plumber.slug ?? plumber_id}`);
+      } catch { /* non-fatal */ }
 
       return NextResponse.json({
         status: "auto_approved",

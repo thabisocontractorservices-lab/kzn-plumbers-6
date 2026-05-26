@@ -148,62 +148,59 @@ export function RegisterWizard() {
       let userEmail = account.email;
 
       if (!alreadyLoggedIn) {
-        // ── Step 1: Client-side signUp() ─────────────────────────────────
-        // Creates the auth user AND sends the confirmation email.
-        // If user already exists, we still continue to /api/register
-        // to create the plumber row (which may have failed on first attempt).
-        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-          email: account.email,
-          password: account.password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
-            data: {
-              full_name: account.full_name,
-              role: "plumber",
-            },
-          },
+        // ── Check if this user already exists (prevents duplicate emails) ──
+        // Call /api/register/check first. If the auth user already exists,
+        // skip signUp() entirely — no duplicate confirmation email sent.
+        const checkRes = await fetch("/api/register/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: account.email }),
         });
+        const checkData = await checkRes.json();
+        const userAlreadyExists = checkData.exists === true;
 
-        if (signUpError) {
-          const msg = signUpError.message.toLowerCase();
+        if (!userAlreadyExists) {
+          // ── Brand new user: call signUp() ────────────────────────────────
+          // Creates the auth user AND sends ONE confirmation email.
+          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+            email: account.email,
+            password: account.password,
+            options: {
+              emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+              data: {
+                full_name: account.full_name,
+                role: "plumber",
+              },
+            },
+          });
 
-          // Rate-limited by Supabase — this is the only hard stop
-          if (msg.includes("security purposes") || msg.includes("rate limit") || msg.includes("request this after")) {
-            const seconds = msg.match(/after (\d+) second/)?.[1] ?? "60";
-            setError(
-              `Too many attempts. Please wait ${seconds} seconds and try again.`
-            );
-            setSubmitting(false);
-            return;
+          if (signUpError) {
+            const msg = signUpError.message.toLowerCase();
+
+            if (msg.includes("security purposes") || msg.includes("rate limit") || msg.includes("request this after")) {
+              const seconds = msg.match(/after (\d+) second/)?.[1] ?? "60";
+              setError(`Too many attempts. Please wait ${seconds} seconds and try again.`);
+              setSubmitting(false);
+              return;
+            }
+
+            // Any other signUp error that isn't "already exists" — show it
+            if (!msg.includes("already registered") && !msg.includes("already been registered") && !msg.includes("user already exists")) {
+              setError(signUpError.message);
+              setSubmitting(false);
+              return;
+            }
           }
 
-          // User already exists — NOT an error for us. The auth user was
-          // created on a previous attempt. Continue to /api/register to
-          // create the plumber row (which may be missing).
-          if (msg.includes("already registered") || msg.includes("already been registered") || msg.includes("user already exists")) {
-            console.log("[register] User already exists, continuing to create plumber profile...");
-            // Fall through to step 2
-          } else {
-            // Genuine error
-            setError(signUpError.message);
-            setSubmitting(false);
-            return;
-          }
+          // Brief pause to let Supabase trigger create the profiles row
+          await new Promise((r) => setTimeout(r, 1500));
         }
-
-        // Supabase returns user=null or identities=[] when user already exists.
-        // This is fine — the auth user was created before. Continue to /api/register.
-        if (signUpData?.user?.identities?.length === 0 || !signUpData?.user) {
-          console.log("[register] User already exists (identities check), continuing...");
-          // Fall through to step 2
-        }
+        // If user already exists, skip signUp and go straight to /api/register
+        // to create the plumber row (no duplicate email sent)
       } else {
         // Already logged in — use their email
         userEmail = existingSession.user.email ?? account.email;
       }
-
-      // Brief pause to let Supabase's auth trigger create the profiles row
-      await new Promise((r) => setTimeout(r, 1500));
 
       // ── Step 2: Server route inserts plumber row ─────────────────────────
       // Uses service-role to bypass RLS (user may have no session yet).

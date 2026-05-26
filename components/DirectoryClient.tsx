@@ -57,17 +57,22 @@ export function DirectoryClient({
       );
     }
 
+    // Always prioritise plumbers who claimed/created their account (profile_id set)
+    // within each sort order. This rewards engaged plumbers.
+    const claimed = (p: Plumber) => (p.profile_id ? 1 : 0);
+
     if (sort === "rated") {
-      r.sort((a, b) => (b.google_rating ?? 0) - (a.google_rating ?? 0));
+      r.sort((a, b) => claimed(b) - claimed(a) || (b.google_rating ?? 0) - (a.google_rating ?? 0));
     } else if (sort === "price") {
-      // Plumbers without a published rate sort to the end
       r.sort((a, b) => {
+        const c = claimed(b) - claimed(a);
+        if (c !== 0) return c;
         const ar = a.hourly_rate ?? Number.POSITIVE_INFINITY;
         const br = b.hourly_rate ?? Number.POSITIVE_INFINITY;
         return ar - br;
       });
     } else if (sort === "name") {
-      r.sort((a, b) => a.trading_name.localeCompare(b.trading_name));
+      r.sort((a, b) => claimed(b) - claimed(a) || a.trading_name.localeCompare(b.trading_name));
     }
 
     return r;
