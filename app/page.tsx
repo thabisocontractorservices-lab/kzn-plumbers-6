@@ -26,7 +26,9 @@ export default async function HomePage({
     .select(
       `
       *,
-      profile:profiles(full_name, email)
+      profile:profiles(full_name, email),
+      photos(photo_url, is_profile_photo),
+      certifications(id, cert_name)
     `,
     )
     .eq("is_verified", true)

@@ -41,18 +41,30 @@ export function PlumberCard({ plumber }: { plumber: Plumber }) {
     unavailable: "bg-red-100 text-red-800",
   }[plumber.availability_status];
 
+  // Profile photo (if uploaded)
+  const profilePhoto = plumber.photos?.find((p) => p.is_profile_photo)?.photo_url ?? null;
+  const certCount = plumber.certifications?.length ?? 0;
+  const isClaimed = !!plumber.profile_id;
+
   return (
     <article className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-card-hover hover:-translate-y-0.5 hover:border-blue-200 transition-all flex flex-col">
       <Link
         href={`/plumber/${plumber.slug ?? plumber.id}`}
         className="flex gap-3 items-start mb-3"
       >
-        <div
-          className="w-14 h-14 rounded-xl flex items-center justify-center font-bold text-white text-lg shrink-0"
-          style={{ background: "linear-gradient(135deg,#1A5FBE,#3A7FDE)" }}
-        >
-          {initials(plumber.trading_name)}
-        </div>
+        {profilePhoto ? (
+          <div
+            className="w-14 h-14 rounded-xl bg-cover bg-center shrink-0"
+            style={{ backgroundImage: `url(${profilePhoto})` }}
+          />
+        ) : (
+          <div
+            className="w-14 h-14 rounded-xl flex items-center justify-center font-bold text-white text-lg shrink-0"
+            style={{ background: "linear-gradient(135deg,#1A5FBE,#3A7FDE)" }}
+          >
+            {initials(plumber.trading_name)}
+          </div>
+        )}
         <div className="flex-1 min-w-0">
           <h3 className="font-display font-bold text-lg text-gray-900 leading-tight">
             {plumber.trading_name}
@@ -65,6 +77,9 @@ export function PlumberCard({ plumber }: { plumber: Plumber }) {
       </Link>
 
       <div className="flex flex-wrap gap-1.5 mb-3">
+        {isClaimed && (
+          <span className="badge bg-blue-100 text-blue-700">✓ Claimed</span>
+        )}
         {plumber.is_certified && plumber.is_verified && (
           <span className="badge bg-teal-light text-teal">✓ PIRB Certified</span>
         )}
@@ -73,6 +88,9 @@ export function PlumberCard({ plumber }: { plumber: Plumber }) {
         </span>
         {plumber.is_emergency && (
           <span className="badge bg-emergency-light text-emergency">🚨 24/7</span>
+        )}
+        {certCount > 0 && (
+          <span className="badge bg-purple-100 text-purple-700">📜 {certCount} cert{certCount > 1 ? "s" : ""}</span>
         )}
       </div>
 

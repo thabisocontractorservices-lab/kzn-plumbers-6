@@ -168,4 +168,6 @@ export type Database = {
 export type Plumber = Database["public"]["Tables"]["plumbers"]["Row"] & {
   profile?: Database["public"]["Tables"]["profiles"]["Row"];
   ratings?: Database["public"]["Views"]["plumber_ratings"]["Row"];
+  photos?: Array<{ photo_url: string; is_profile_photo: boolean }>;
+  certifications?: Array<{ id: string; cert_name: string }>;
 };
