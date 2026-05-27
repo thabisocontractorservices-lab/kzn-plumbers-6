@@ -6,11 +6,6 @@ import { ClaimFlow } from "@/components/ClaimFlow";
 
 export const revalidate = 300;
 
-// Prevent Google from indexing claim pages
-export const metadata: Metadata = {
-  robots: { index: false, follow: false },
-};
-
 export default async function ClaimPage({
   params,
 }: {
@@ -115,10 +110,11 @@ export async function generateMetadata({
     .eq("slug", slug)
     .single();
 
-  if (!plumber) return { title: "Claim Your Listing — KZN Plumbers" };
+  if (!plumber) return { title: "Claim Your Listing — KZN Plumbers", robots: { index: false, follow: false } };
 
   return {
     title: `Claim ${plumber.trading_name} — KZN Plumbers`,
     description: `Are you ${plumber.trading_name} in ${plumber.area}? Claim your free listing on KZN Plumbers to manage your profile, respond to enquiries, and get more customers.`,
+    robots: { index: false, follow: false },
   };
 }
