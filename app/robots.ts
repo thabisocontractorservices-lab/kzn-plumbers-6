@@ -17,6 +17,10 @@ export default function robots(): MetadataRoute.Robots {
           "/auth",
           "/api",
           "/review/", // short link redirects, no SEO value
+          "/claim/",  // action pages, not content — no SEO value
+          "/login",
+          "/register",
+          "/forgot-password",
         ],
       },
     ],

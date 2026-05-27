@@ -1,9 +1,15 @@
+import type { Metadata } from "next";
 import { supabase } from "@/src/supabaseClient";
 import { notFound } from "next/navigation";
 import { initials, formatRand } from "@/lib/utils";
 import { ClaimFlow } from "@/components/ClaimFlow";
 
 export const revalidate = 300;
+
+// Prevent Google from indexing claim pages
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 export default async function ClaimPage({
   params,

@@ -37,12 +37,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let plumbers: Array<{
     slug: string | null;
     id: string;
+    profile_id: string | null;
+    about: string | null;
+    google_rating: number | null;
     updated_at: string | null;
   }> = [];
   try {
     const { data } = await supabase
       .from("plumbers")
-      .select("slug, id, updated_at")
+      .select("slug, id, profile_id, about, google_rating, updated_at")
       .eq("is_verified", true);
     plumbers = data ?? [];
   } catch (err) {
@@ -62,18 +65,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "daily",
       priority: 0.9,
     },
-    {
-      url: `${SITE_URL}/register`,
-      lastModified: now,
-      changeFrequency: "monthly",
-      priority: 0.5,
-    },
-    {
-      url: `${SITE_URL}/login`,
-      lastModified: now,
-      changeFrequency: "yearly",
-      priority: 0.2,
-    },
+    // /register, /login, /claim excluded — blocked in robots.txt
   ];
 
   // SEO content pages — high priority since these target search traffic
@@ -86,14 +78,22 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     });
   }
 
-  // Plumber profiles
+  // Plumber profiles — prioritise claimed, rated, and content-rich profiles
   for (const p of plumbers) {
     const slug = p.slug ?? p.id;
+    const isClaimed = !!p.profile_id;
+    const hasContent = !!p.about;
+    const hasRating = !!p.google_rating;
+    // Claimed + content-rich = 0.8, claimed = 0.7, rated = 0.6, basic = 0.5
+    const priority = isClaimed && hasContent ? 0.8
+      : isClaimed ? 0.7
+      : hasRating ? 0.6
+      : 0.5;
     entries.push({
       url: `${SITE_URL}/plumber/${slug}`,
       lastModified: p.updated_at ? new Date(p.updated_at) : now,
-      changeFrequency: "weekly",
-      priority: 0.7,
+      changeFrequency: isClaimed ? "weekly" : "monthly",
+      priority,
     });
   }
 
