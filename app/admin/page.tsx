@@ -159,6 +159,7 @@ function AdminPageInner() {
                   <th className="text-left px-4 py-3 font-semibold text-gray-700">Business</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-700">Phone</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-700">Signed up</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-700">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -190,9 +191,9 @@ function AdminPageInner() {
                               href={`/plumber/${biz.slug ?? u.id}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-brand hover:underline font-medium"
+                              className="text-brand hover:underline font-semibold"
                             >
-                              {biz.trading_name}
+                              {biz.trading_name} ↗
                             </a>
                             <div className="text-xs text-gray-500">
                               📍 {biz.area}
@@ -204,7 +205,7 @@ function AdminPageInner() {
                             </div>
                           </div>
                         ) : (
-                          <span className="text-gray-400">No business</span>
+                          <span className="text-xs text-gray-400 italic">No business profile</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-gray-600">
@@ -213,12 +214,26 @@ function AdminPageInner() {
                       <td className="px-4 py-3 text-gray-500 text-xs">
                         {new Date(u.created_at).toLocaleDateString("en-ZA")}
                       </td>
+                      <td className="px-4 py-3">
+                        {biz ? (
+                          <a
+                            href={`/plumber/${biz.slug ?? u.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-brand hover:underline font-semibold"
+                          >
+                            View profile ↗
+                          </a>
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
                 {users.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="text-center py-12 text-gray-500">
+                    <td colSpan={6} className="text-center py-12 text-gray-500">
                       No registered users yet.
                     </td>
                   </tr>
