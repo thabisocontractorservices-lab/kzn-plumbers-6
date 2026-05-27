@@ -11,6 +11,7 @@ export function AdminCard({
   app: {
     id: string;
     trading_name: string;
+    slug: string | null;
     area: string;
     pirb_number: string | null;
     specialties: string[];
@@ -68,7 +69,14 @@ export function AdminCard({
           {initials(app.trading_name)}
         </div>
         <div>
-          <div className="font-display font-bold">{app.trading_name}</div>
+          <a
+            href={`/plumber/${app.slug ?? app.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-display font-bold text-brand hover:underline"
+          >
+            {app.trading_name} ↗
+          </a>
           <div className="text-xs text-gray-500">
             📍 {app.area} · Applied {new Date(app.created_at).toLocaleDateString("en-ZA")}
           </div>

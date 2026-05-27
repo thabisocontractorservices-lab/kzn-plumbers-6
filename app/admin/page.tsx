@@ -12,6 +12,7 @@ import { DashboardLoading } from "@/components/DashboardLoading";
 type Application = {
   id: string;
   trading_name: string;
+  slug: string | null;
   area: string;
   pirb_number: string | null;
   specialties: string[];
