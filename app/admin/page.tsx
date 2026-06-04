@@ -32,6 +32,7 @@ type UserWithBusiness = {
   whatsapp_number: string | null;
   created_at: string;
   plumber?: {
+    id: string;
     trading_name: string;
     area: string;
     is_verified: boolean;
@@ -100,11 +101,12 @@ function AdminPageInner() {
       }
 
       if (tab === "users") {
-        const usersRes = await supabase
-          .from("profiles")
-          .select("*, plumber:plumbers(trading_name, area, is_verified, slug)")
-          .order("created_at", { ascending: false });
-        if (mounted) setUsers((usersRes.data as UserWithBusiness[]) ?? []);
+        // Use server API route to bypass RLS — admin needs to see ALL plumber data
+        const usersRes = await fetch("/api/admin/users");
+        if (usersRes.ok) {
+          const { users: usersData } = await usersRes.json();
+          if (mounted) setUsers((usersData as UserWithBusiness[]) ?? []);
+        }
       }
 
       setLoading(false);
