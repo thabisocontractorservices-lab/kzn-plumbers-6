@@ -102,6 +102,7 @@ export const KZN_AREAS = [
   "Newcastle",
   "Pinetown",
   "Ballito",
+  "Estcourt",
   "Other KZN",
 ] as const;
 

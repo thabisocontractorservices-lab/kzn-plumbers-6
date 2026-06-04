@@ -17,6 +17,7 @@ const AREAS = [
   { key: "ballito", label: "Ballito / North Coast", match: ["Ballito"] },
   { key: "richardsbay", label: "Richards Bay", match: ["Richards Bay"] },
   { key: "newcastle", label: "Newcastle", match: ["Newcastle"] },
+  { key: "estcourt", label: "Estcourt", match: ["Estcourt"] },
   { key: "southcoast", label: "South Coast", match: ["South Coast"] },
   { key: "other", label: "Other KZN", match: ["Other KZN"] },
 ] as const;
