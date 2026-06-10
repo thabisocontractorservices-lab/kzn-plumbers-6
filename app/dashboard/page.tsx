@@ -71,7 +71,7 @@ export default function DashboardPage() {
 
       if (!mounted) return;
 
-      const admin = roleRes.data?.role === "admin";
+      const admin = (roleRes.data as { role?: string } | null)?.role === "admin";
       setIsAdmin(admin);
 
       let p = plumberRes.data as Plumber | null;
@@ -80,12 +80,14 @@ export default function DashboardPage() {
       if (!p && admin) {
         const { data: allPlumbers } = await supabase
           .from("plumbers")
-          .select("id, trading_name, slug, profile_id")
+          .select("id, trading_name, slug")
           .eq("is_verified", true)
-          .not("profile_id", "is", null)
           .order("trading_name")
-          .limit(50);
-        if (mounted) setAdminPlumbers((allPlumbers ?? []) as Array<{ id: string; trading_name: string; slug: string | null }>);
+          .limit(100);
+        // Filter to only plumbers with profile_id (claimed accounts)
+        const claimed = ((allPlumbers ?? []) as Array<{ id: string; trading_name: string; slug: string | null; profile_id?: string }>)
+          .filter((pl) => !!pl.profile_id);
+        if (mounted) setAdminPlumbers(claimed);
       }
 
       // Check photos + certs for completeness %
@@ -111,7 +113,7 @@ export default function DashboardPage() {
       }
 
       setPlumber(p);
-      setProfileName(profileRes.data?.full_name ?? user.email);
+      setProfileName(profileRes.data?.full_name ?? user.email ?? "there");
 
       if (p) {
         const { data } = await supabase
