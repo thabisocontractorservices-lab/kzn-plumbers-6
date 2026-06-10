@@ -50,23 +50,43 @@ export default function DashboardPage() {
   const [profileName, setProfileName] = useState<string>("");
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminPlumbers, setAdminPlumbers] = useState<Array<{ id: string; trading_name: string; slug: string | null }>>([]);
+  const [previewingAs, setPreviewingAs] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
     let mounted = true;
 
     (async () => {
-      const [plumberRes, profileRes] = await Promise.all([
+      const [plumberRes, profileRes, roleRes] = await Promise.all([
         supabase
           .from("plumbers")
           .select("*")
           .eq("profile_id", user.id)
           .maybeSingle(),
         supabase.from("profiles").select("full_name").eq("id", user.id).single(),
+        supabase.from("profiles").select("role").eq("id", user.id).single(),
       ]);
 
       if (!mounted) return;
-      const p = plumberRes.data as Plumber | null;
+
+      const admin = roleRes.data?.role === "admin";
+      setIsAdmin(admin);
+
+      let p = plumberRes.data as Plumber | null;
+
+      // Admin without own plumber profile: load a list of plumbers to preview
+      if (!p && admin) {
+        const { data: allPlumbers } = await supabase
+          .from("plumbers")
+          .select("id, trading_name, slug, profile_id")
+          .eq("is_verified", true)
+          .not("profile_id", "is", null)
+          .order("trading_name")
+          .limit(50);
+        if (mounted) setAdminPlumbers((allPlumbers ?? []) as Array<{ id: string; trading_name: string; slug: string | null }>);
+      }
 
       // Check photos + certs for completeness %
       if (p) {
@@ -114,20 +134,73 @@ export default function DashboardPage() {
   if (authChecking || loading) return <DashboardLoading />;
   if (!user) return null; // redirecting
 
-  if (!plumber) {
+  if (!plumber && !previewingAs) {
     return (
       <div className="max-w-3xl mx-auto p-12 text-center">
         <div className="w-20 h-20 rounded-full bg-brand-light text-brand flex items-center justify-center text-4xl mx-auto mb-6">
           🔧
         </div>
-        <h1 className="font-display text-3xl mb-3">Complete your business profile</h1>
+        <h1 className="font-display text-3xl mb-3">
+          {isAdmin ? "Admin Dashboard Preview" : "Complete your business profile"}
+        </h1>
         <p className="text-gray-600 mb-6 max-w-md mx-auto">
-          You&apos;re signed in but don&apos;t have a business listing yet. Set up your profile
-          to appear on the KZN Plumbers directory.
+          {isAdmin
+            ? "You're logged in as admin. Select a plumber below to preview their dashboard experience."
+            : "You're signed in but don't have a business listing yet. Set up your profile to appear on the KZN Plumbers directory."}
         </p>
-        <Link href="/register" className="btn-primary">
-          Set up my business →
-        </Link>
+
+        {isAdmin && adminPlumbers.length > 0 ? (
+          <div className="max-w-md mx-auto">
+            <select
+              className="input mb-4 text-center"
+              defaultValue=""
+              onChange={async (e) => {
+                if (!e.target.value) return;
+                setLoading(true);
+                const { data } = await supabase
+                  .from("plumbers")
+                  .select("*")
+                  .eq("id", e.target.value)
+                  .single();
+                if (data) {
+                  const p = data as Plumber;
+                  const [photosRes, profilePhotoRes, certsRes] = await Promise.all([
+                    supabase.from("photos").select("id", { count: "exact", head: true }).eq("plumber_id", p.id),
+                    supabase.from("photos").select("id", { count: "exact", head: true }).eq("plumber_id", p.id).eq("is_profile_photo", true),
+                    supabase.from("certifications").select("id", { count: "exact", head: true }).eq("plumber_id", p.id),
+                  ]);
+                  p.has_photos = (photosRes.count ?? 0) > 0;
+                  p.has_profile_photo = (profilePhotoRes.count ?? 0) > 0;
+                  p.has_certs = (certsRes.count ?? 0) > 0;
+                  setPlumber(p);
+                  setPreviewingAs(p.trading_name);
+                  const { data: bk } = await supabase
+                    .from("bookings")
+                    .select("*")
+                    .eq("plumber_id", p.id)
+                    .order("created_at", { ascending: false })
+                    .limit(8);
+                  setBookings((bk as Booking[]) ?? []);
+                }
+                setLoading(false);
+              }}
+            >
+              <option value="">Select a plumber to preview...</option>
+              {adminPlumbers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.trading_name}
+                </option>
+              ))}
+            </select>
+            <Link href="/admin" className="btn-secondary">
+              ← Back to Admin Panel
+            </Link>
+          </div>
+        ) : (
+          <Link href={isAdmin ? "/admin" : "/register"} className="btn-primary">
+            {isAdmin ? "← Back to Admin Panel" : "Set up my business →"}
+          </Link>
+        )}
       </div>
     );
   }
@@ -159,6 +232,24 @@ export default function DashboardPage() {
           </div>
           <AvailabilityToggle plumberId={plumber.id} initial={plumber.availability_status} />
         </header>
+
+        {/* Admin preview banner */}
+        {previewingAs && (
+          <div className="mb-6 rounded-xl border border-purple-200 bg-purple-50 p-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">👁</span>
+              <span className="text-sm font-semibold text-purple-800">
+                Previewing as: {previewingAs}
+              </span>
+            </div>
+            <button
+              onClick={() => { setPlumber(null); setPreviewingAs(null); setBookings([]); }}
+              className="text-xs text-purple-700 hover:underline font-medium"
+            >
+              ← Back to picker
+            </button>
+          </div>
+        )}
 
         {/* WhatsApp Community banner */}
         <div className="mb-6 rounded-xl border border-green-200 bg-gradient-to-r from-green-50 to-emerald-50 p-5">
