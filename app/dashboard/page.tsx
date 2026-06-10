@@ -160,6 +160,31 @@ export default function DashboardPage() {
           <AvailabilityToggle plumberId={plumber.id} initial={plumber.availability_status} />
         </header>
 
+        {/* WhatsApp Community banner */}
+        <div className="mb-6 rounded-xl border border-green-200 bg-gradient-to-r from-green-50 to-emerald-50 p-5">
+          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+            <div className="w-12 h-12 rounded-xl bg-green-100 text-green-600 flex items-center justify-center text-2xl shrink-0">
+              💬
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-display text-base font-bold text-gray-900 mb-0.5">
+                Join our exclusive WhatsApp community
+              </h3>
+              <p className="text-sm text-gray-600">
+                Connect with other KZN plumbers, get tips, share leads, and stay updated on new features.
+              </p>
+            </div>
+            <a
+              href="https://whatsapp.com/channel/0029Vb8gADzG3R3pl9D5Qe1u"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-whatsapp whitespace-nowrap shrink-0 text-sm"
+            >
+              💬 Join community
+            </a>
+          </div>
+        </div>
+
         {!plumber.is_verified && (
           <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-5">
             <div className="flex gap-3 items-start">
