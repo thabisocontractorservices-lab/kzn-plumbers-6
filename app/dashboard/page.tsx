@@ -207,16 +207,19 @@ export default function DashboardPage() {
     );
   }
 
+  // At this point plumber is guaranteed non-null (checked above)
+  const p = plumber!;
+
   const r = combinedRating(
-    plumber.google_rating,
-    plumber.google_review_count,
-    plumber.ratings?.internal_rating,
-    plumber.ratings?.internal_count,
+    p.google_rating,
+    p.google_review_count,
+    p.ratings?.internal_rating,
+    p.ratings?.internal_count,
   );
 
-  const completeness = computeCompleteness(plumber);
-  const reviewLink = plumber.google_place_id ? reviewUrl(plumber.google_place_id) : null;
-  const shortLink = `${typeof window !== "undefined" ? window.location.origin : ""}/review/${plumber.slug ?? plumber.id}`;
+  const completeness = computeCompleteness(p);
+  const reviewLink = p.google_place_id ? reviewUrl(p.google_place_id) : null;
+  const shortLink = `${typeof window !== "undefined" ? window.location.origin : ""}/review/${p.slug ?? p.id}`;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 grid lg:grid-cols-[240px_1fr] gap-6">
@@ -232,7 +235,7 @@ export default function DashboardPage() {
               Here's what's happening with your business today
             </p>
           </div>
-          <AvailabilityToggle plumberId={plumber.id} initial={plumber.availability_status} />
+          <AvailabilityToggle plumberId={p.id} initial={p.availability_status} />
         </header>
 
         {/* Admin preview banner */}
@@ -278,7 +281,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {!plumber.is_verified && (
+        {!p.is_verified && (
           <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-5">
             <div className="flex gap-3 items-start">
               <span className="text-2xl shrink-0">⏳</span>
@@ -345,14 +348,14 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <Stat icon="👁" value={plumber.profile_views} label="Profile views (30d)" color="bg-brand-light text-brand" />
+          <Stat icon="👁" value={p.profile_views} label="Profile views (30d)" color="bg-brand-light text-brand" />
           <Stat icon="📅" value={bookings.length} label="Recent bookings" color="bg-green-100 text-green-800" />
           <Stat icon="⭐" value={r.rating ?? "—"} label={`Avg rating · ${r.count} reviews`} color="bg-amber-light text-amber" />
-          <Stat icon="💬" value={plumber.is_emergency ? "24/7" : "Business hrs"} label="Availability" color="bg-purple-100 text-purple-700" />
+          <Stat icon="💬" value={p.is_emergency ? "24/7" : "Business hrs"} label="Availability" color="bg-purple-100 text-purple-700" />
         </div>
 
         {reviewLink && (
-          <ReviewLinkSection reviewUrl={reviewLink} shortUrl={shortLink} plumberName={plumber.trading_name} />
+          <ReviewLinkSection reviewUrl={reviewLink} shortUrl={shortLink} plumberName={p.trading_name} />
         )}
 
         <div className="grid lg:grid-cols-2 gap-5 mt-6">
