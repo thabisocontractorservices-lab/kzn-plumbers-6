@@ -81,20 +81,22 @@ export default function DashboardPage() {
       if (!p && admin) {
         const { data: allPlumbers } = await supabase
           .from("plumbers")
-          .select("id, trading_name, slug")
+          .select("id, trading_name, slug, profile_id")
           .eq("is_verified", true)
           .order("trading_name")
           .limit(100);
-        const claimed = ((allPlumbers ?? []) as Array<{ id: string; trading_name: string; slug: string | null; profile_id?: string }>)
+        const claimed = ((allPlumbers ?? []) as Array<{ id: string; trading_name: string; slug: string | null; profile_id: string | null }>)
           .filter((pl) => !!pl.profile_id);
-        if (mounted) setAdminPlumbers(claimed);
+        // If no claimed plumbers found (possibly RLS issue), fall back to all verified
+        const plumberList = claimed.length > 0 ? claimed : ((allPlumbers ?? []) as Array<{ id: string; trading_name: string; slug: string | null; profile_id: string | null }>);
+        if (mounted) setAdminPlumbers(plumberList);
 
-        // Auto-load the first claimed plumber so admin sees the dashboard immediately
-        if (claimed.length > 0) {
+        // Auto-load the first plumber so admin sees the dashboard immediately
+        if (plumberList.length > 0) {
           const { data: firstPlumber } = await supabase
             .from("plumbers")
             .select("*")
-            .eq("id", claimed[0].id)
+            .eq("id", plumberList[0].id)
             .single();
           if (firstPlumber && mounted) {
             p = firstPlumber as Plumber;
