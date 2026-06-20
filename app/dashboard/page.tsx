@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/src/supabaseClient";
 import { reviewUrl } from "@/lib/google/places";
@@ -194,33 +194,25 @@ export default function DashboardPage() {
           <AvailabilityToggle plumberId={p.id} initial={p.availability_status} />
         </header>
 
-        {/* Admin: plumber switcher */}
-        {isAdmin && adminPlumbers.length > 1 && (
-          <div className="mb-6 rounded-xl border border-brand/20 bg-brand-light p-3 flex items-center gap-3">
-            <span className="text-sm font-semibold text-brand shrink-0">Viewing:</span>
-            <select
-              className="input text-sm flex-1"
-              value={p.id}
-              onChange={async (e) => {
-                if (!e.target.value) return;
-                setLoading(true);
-                const res = await fetch(`/api/admin/plumber-detail?id=${e.target.value}`);
-                if (res.ok) {
-                  const { plumber: pd, bookings: bk } = await res.json();
-                  if (pd) {
-                    setPlumber(pd as Plumber);
-                    setPreviewingAs(pd.trading_name);
-                    setBookings((bk ?? []) as Booking[]);
-                  }
+        {/* Admin: searchable plumber switcher */}
+        {isAdmin && adminPlumbers.length > 0 && (
+          <AdminPlumberSearch
+            plumbers={adminPlumbers}
+            currentId={p.id}
+            onSelect={async (id) => {
+              setLoading(true);
+              const res = await fetch(`/api/admin/plumber-detail?id=${id}`);
+              if (res.ok) {
+                const { plumber: pd, bookings: bk } = await res.json();
+                if (pd) {
+                  setPlumber(pd as Plumber);
+                  setPreviewingAs(pd.trading_name);
+                  setBookings((bk ?? []) as Booking[]);
                 }
-                setLoading(false);
-              }}
-            >
-              {adminPlumbers.map((ap) => (
-                <option key={ap.id} value={ap.id}>{ap.trading_name}</option>
-              ))}
-            </select>
-          </div>
+              }
+              setLoading(false);
+            }}
+          />
         )}
 
         {/* WhatsApp Community banner */}
@@ -404,7 +396,6 @@ type CompletenessResult = { percent: number; missing: string[] };
 
 function computeCompleteness(p: Plumber): CompletenessResult {
   const criteria: [boolean, string, string][] = [
-    // [isMet, label, link to fix it]
     [!!p.about && p.about.length >= 20, "Add a business description", "/dashboard/profile"],
     [p.specialties.length > 0, "Add at least one specialty", "/dashboard/profile"],
     [!!p.whatsapp_number, "Add a phone number", "/dashboard/profile"],
@@ -418,4 +409,92 @@ function computeCompleteness(p: Plumber): CompletenessResult {
   const met = criteria.filter(([ok]) => ok).length;
   const missing = criteria.filter(([ok]) => !ok).map(([, label]) => label);
   return { percent: Math.round((met / criteria.length) * 100), missing };
+}
+
+function AdminPlumberSearch({
+  plumbers,
+  currentId,
+  onSelect,
+}: {
+  plumbers: Array<{ id: string; trading_name: string; slug: string | null }>;
+  currentId: string;
+  onSelect: (id: string) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const filtered = search.trim()
+    ? plumbers.filter((p) =>
+        p.trading_name.toLowerCase().includes(search.toLowerCase()),
+      )
+    : plumbers;
+
+  const currentName =
+    plumbers.find((p) => p.id === currentId)?.trading_name ?? "Select plumber";
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  return (
+    <div ref={ref} className="mb-6 rounded-xl border border-brand/20 bg-brand-light p-3 relative">
+      <div className="flex items-center gap-3">
+        <span className="text-sm font-semibold text-brand shrink-0">Viewing:</span>
+        <button
+          type="button"
+          onClick={() => { setOpen(!open); setSearch(""); }}
+          className="input text-sm flex-1 text-left flex items-center justify-between"
+        >
+          <span className="truncate">{currentName}</span>
+          <span className="text-gray-400 text-xs ml-2">{open ? "▲" : "▼"}</span>
+        </button>
+      </div>
+
+      {open && (
+        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-50 max-h-80 overflow-hidden">
+          <div className="p-2 border-b border-gray-100">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search plumbers..."
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-brand"
+              autoFocus
+            />
+          </div>
+          <div className="overflow-y-auto max-h-60">
+            {filtered.length === 0 && (
+              <div className="px-3 py-4 text-sm text-gray-400 text-center">
+                No plumbers found
+              </div>
+            )}
+            {filtered.map((ap) => (
+              <button
+                key={ap.id}
+                type="button"
+                onClick={() => {
+                  onSelect(ap.id);
+                  setOpen(false);
+                  setSearch("");
+                }}
+                className={`w-full text-left px-3 py-2.5 text-sm hover:bg-brand-light transition-colors ${
+                  ap.id === currentId
+                    ? "bg-brand-light font-semibold text-brand"
+                    : "text-gray-700"
+                }`}
+              >
+                {ap.trading_name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
