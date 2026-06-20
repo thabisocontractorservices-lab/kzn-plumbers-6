@@ -76,39 +76,25 @@ export default function DashboardPage() {
 
       let p = plumberRes.data as Plumber | null;
 
-      // Admin without own plumber profile: auto-load the first claimed plumber
-      // so the admin sees the exact same dashboard as plumbers
+      // Admin without own plumber profile: load ALL verified plumbers
+      // so admin can view any plumber's dashboard (read-only)
       if (!p && admin) {
-        const { data: allPlumbers } = await supabase
-          .from("plumbers")
-          .select("id, trading_name, slug, profile_id")
-          .eq("is_verified", true)
-          .order("trading_name")
-          .limit(100);
-        const claimed = ((allPlumbers ?? []) as Array<{ id: string; trading_name: string; slug: string | null; profile_id: string | null }>)
-          .filter((pl) => !!pl.profile_id);
-        // If no claimed plumbers found (possibly RLS issue), fall back to all verified
-        const plumberList = claimed.length > 0 ? claimed : ((allPlumbers ?? []) as Array<{ id: string; trading_name: string; slug: string | null; profile_id: string | null }>);
+        // Use the admin API route to bypass RLS and get all plumbers
+        const res = await fetch("/api/admin/plumbers");
+        const { plumbers: allPlumbersList } = res.ok ? await res.json() : { plumbers: [] };
+        const plumberList = (allPlumbersList ?? []) as Array<{ id: string; trading_name: string; slug: string | null }>;
         if (mounted) setAdminPlumbers(plumberList);
 
         // Auto-load the first plumber so admin sees the dashboard immediately
         if (plumberList.length > 0) {
-          const { data: firstPlumber } = await supabase
-            .from("plumbers")
-            .select("*")
-            .eq("id", plumberList[0].id)
-            .single();
-          if (firstPlumber && mounted) {
-            p = firstPlumber as Plumber;
-            const [pRes, ppRes, cRes] = await Promise.all([
-              supabase.from("photos").select("id", { count: "exact", head: true }).eq("plumber_id", p.id),
-              supabase.from("photos").select("id", { count: "exact", head: true }).eq("plumber_id", p.id).eq("is_profile_photo", true),
-              supabase.from("certifications").select("id", { count: "exact", head: true }).eq("plumber_id", p.id),
-            ]);
-            p.has_photos = (pRes.count ?? 0) > 0;
-            p.has_profile_photo = (ppRes.count ?? 0) > 0;
-            p.has_certs = (cRes.count ?? 0) > 0;
-            setPreviewingAs(p.trading_name);
+          const detailRes = await fetch(`/api/admin/plumber-detail?id=${plumberList[0].id}`);
+          if (detailRes.ok) {
+            const { plumber: pd, bookings: bk } = await detailRes.json();
+            if (pd && mounted) {
+              p = pd as Plumber;
+              setPreviewingAs(p.trading_name);
+              if (mounted) setBookings((bk ?? []) as Booking[]);
+            }
           }
         }
       }
@@ -218,30 +204,14 @@ export default function DashboardPage() {
               onChange={async (e) => {
                 if (!e.target.value) return;
                 setLoading(true);
-                const { data } = await supabase
-                  .from("plumbers")
-                  .select("*")
-                  .eq("id", e.target.value)
-                  .single();
-                if (data) {
-                  const np = data as Plumber;
-                  const [pRes, ppRes, cRes] = await Promise.all([
-                    supabase.from("photos").select("id", { count: "exact", head: true }).eq("plumber_id", np.id),
-                    supabase.from("photos").select("id", { count: "exact", head: true }).eq("plumber_id", np.id).eq("is_profile_photo", true),
-                    supabase.from("certifications").select("id", { count: "exact", head: true }).eq("plumber_id", np.id),
-                  ]);
-                  np.has_photos = (pRes.count ?? 0) > 0;
-                  np.has_profile_photo = (ppRes.count ?? 0) > 0;
-                  np.has_certs = (cRes.count ?? 0) > 0;
-                  setPlumber(np);
-                  setPreviewingAs(np.trading_name);
-                  const { data: bk } = await supabase
-                    .from("bookings")
-                    .select("*")
-                    .eq("plumber_id", np.id)
-                    .order("created_at", { ascending: false })
-                    .limit(8);
-                  setBookings((bk as Booking[]) ?? []);
+                const res = await fetch(`/api/admin/plumber-detail?id=${e.target.value}`);
+                if (res.ok) {
+                  const { plumber: pd, bookings: bk } = await res.json();
+                  if (pd) {
+                    setPlumber(pd as Plumber);
+                    setPreviewingAs(pd.trading_name);
+                    setBookings((bk ?? []) as Booking[]);
+                  }
                 }
                 setLoading(false);
               }}
