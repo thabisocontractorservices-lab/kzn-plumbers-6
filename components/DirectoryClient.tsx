@@ -58,22 +58,33 @@ export function DirectoryClient({
       );
     }
 
-    // Always prioritise plumbers who claimed/created their account (profile_id set)
-    // within each sort order. This rewards engaged plumbers.
-    const claimed = (p: Plumber) => (p.profile_id ? 1 : 0);
+    // Score each plumber to determine sort priority:
+    // - Claimed account (profile_id set): +3
+    // - Has photos: +2
+    // - Has certifications: +1
+    // - Has internal reviews: +1
+    // This rewards plumbers who have invested in their profile.
+    const engagementScore = (p: Plumber) => {
+      let score = 0;
+      if (p.profile_id) score += 3;
+      if (p.photos && p.photos.length > 0) score += 2;
+      if (p.certifications && p.certifications.length > 0) score += 1;
+      if (p.reviews && p.reviews.length > 0) score += 1;
+      return score;
+    };
 
     if (sort === "rated") {
-      r.sort((a, b) => claimed(b) - claimed(a) || (b.google_rating ?? 0) - (a.google_rating ?? 0));
+      r.sort((a, b) => engagementScore(b) - engagementScore(a) || (b.google_rating ?? 0) - (a.google_rating ?? 0));
     } else if (sort === "price") {
       r.sort((a, b) => {
-        const c = claimed(b) - claimed(a);
-        if (c !== 0) return c;
+        const e = engagementScore(b) - engagementScore(a);
+        if (e !== 0) return e;
         const ar = a.hourly_rate ?? Number.POSITIVE_INFINITY;
         const br = b.hourly_rate ?? Number.POSITIVE_INFINITY;
         return ar - br;
       });
     } else if (sort === "name") {
-      r.sort((a, b) => claimed(b) - claimed(a) || a.trading_name.localeCompare(b.trading_name));
+      r.sort((a, b) => engagementScore(b) - engagementScore(a) || a.trading_name.localeCompare(b.trading_name));
     }
 
     return r;

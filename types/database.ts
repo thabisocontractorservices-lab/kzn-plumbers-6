@@ -170,4 +170,5 @@ export type Plumber = Database["public"]["Tables"]["plumbers"]["Row"] & {
   ratings?: Database["public"]["Views"]["plumber_ratings"]["Row"];
   photos?: Array<{ photo_url: string; is_profile_photo: boolean }>;
   certifications?: Array<{ id: string; cert_name: string }>;
+  reviews?: Array<{ id: string; rating: number; reviewer_name: string; comment: string | null; created_at: string }>;
 };

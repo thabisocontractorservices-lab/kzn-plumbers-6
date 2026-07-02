@@ -45,6 +45,10 @@ export function PlumberCard({ plumber }: { plumber: Plumber }) {
   const profilePhoto = plumber.photos?.find((p) => p.is_profile_photo)?.photo_url ?? null;
   const certCount = plumber.certifications?.length ?? 0;
   const isClaimed = !!plumber.profile_id;
+  const internalReviews = plumber.reviews ?? [];
+  const internalAvgRating = internalReviews.length > 0
+    ? internalReviews.reduce((sum, rev) => sum + rev.rating, 0) / internalReviews.length
+    : 0;
 
   return (
     <article className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-card-hover hover:-translate-y-0.5 hover:border-blue-200 transition-all flex flex-col">
@@ -105,17 +109,34 @@ export function PlumberCard({ plumber }: { plumber: Plumber }) {
         ))}
       </div>
 
-      <div className="flex items-center gap-2 py-2 border-y border-gray-100 mb-3">
-        <span className="text-amber text-sm tracking-wide">{stars}</span>
-        {r.rating && (
-          <>
-            <strong className="text-sm text-gray-900">{r.rating}</strong>
-            <span className="text-xs text-gray-500">({r.count} reviews)</span>
-          </>
+      <div className="py-2 border-y border-gray-100 mb-3 space-y-1.5">
+        {/* Google rating */}
+        <div className="flex items-center gap-2">
+          <span className="text-amber text-sm tracking-wide">{stars}</span>
+          {r.rating && (
+            <>
+              <strong className="text-sm text-gray-900">{r.rating}</strong>
+              <span className="text-xs text-gray-500">({r.count})</span>
+            </>
+          )}
+          <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-semibold">
+            Google
+          </span>
+        </div>
+        {/* Internal reviews */}
+        {internalReviews.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-amber text-sm tracking-wide">
+              {"★".repeat(Math.round(internalAvgRating))}
+              {"☆".repeat(5 - Math.round(internalAvgRating))}
+            </span>
+            <strong className="text-sm text-gray-900">{internalAvgRating.toFixed(1)}</strong>
+            <span className="text-xs text-gray-500">({internalReviews.length})</span>
+            <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-brand-light text-brand font-semibold">
+              KZN Plumbers
+            </span>
+          </div>
         )}
-        <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-semibold">
-          G + Internal
-        </span>
       </div>
 
       <div className="mt-auto flex flex-col gap-2.5">

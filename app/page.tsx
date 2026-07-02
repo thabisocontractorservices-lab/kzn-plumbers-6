@@ -28,7 +28,8 @@ export default async function HomePage({
       *,
       profile:profiles(full_name, email),
       photos(photo_url, is_profile_photo),
-      certifications(id, cert_name)
+      certifications(id, cert_name),
+      reviews(id, rating, reviewer_name, comment, created_at)
     `,
     )
     .eq("is_verified", true)
