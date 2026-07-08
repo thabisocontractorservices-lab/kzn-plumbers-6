@@ -20,6 +20,12 @@ export function ProfileEditor({
     google_place_id: string | null;
     pirb_number: string | null;
     whatsapp_number: string;
+    website_url: string | null;
+    facebook_url: string | null;
+    instagram_url: string | null;
+    tiktok_url: string | null;
+    sessa_number: string | null;
+    lpgsa_number: string | null;
   };
 }) {
   const router = useRouter();
@@ -43,6 +49,12 @@ export function ProfileEditor({
         google_place_id: form.google_place_id || null,
         pirb_number: form.pirb_number || null,
         whatsapp_number: form.whatsapp_number,
+        website_url: form.website_url || null,
+        facebook_url: form.facebook_url || null,
+        instagram_url: form.instagram_url || null,
+        tiktok_url: form.tiktok_url || null,
+        sessa_number: form.sessa_number || null,
+        lpgsa_number: form.lpgsa_number || null,
       })
       .eq("id", plumber.id);
     setSaving(false);
@@ -163,6 +175,80 @@ export function ProfileEditor({
           />
         </div>
       </div>
+      {/* Website & Social Media */}
+      <div className="border-t border-gray-100 pt-4 mt-2">
+        <h3 className="text-sm font-bold text-gray-900 mb-3">🌐 Website & Social Media</h3>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-semibold mb-1 block">Website URL</label>
+            <input
+              type="url"
+              value={form.website_url ?? ""}
+              onChange={(e) => setForm({ ...form, website_url: e.target.value })}
+              className="input"
+              placeholder="https://www.yourbusiness.co.za"
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs font-semibold mb-1 block">Facebook</label>
+              <input
+                type="url"
+                value={form.facebook_url ?? ""}
+                onChange={(e) => setForm({ ...form, facebook_url: e.target.value })}
+                className="input"
+                placeholder="https://facebook.com/..."
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold mb-1 block">Instagram</label>
+              <input
+                type="url"
+                value={form.instagram_url ?? ""}
+                onChange={(e) => setForm({ ...form, instagram_url: e.target.value })}
+                className="input"
+                placeholder="https://instagram.com/..."
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold mb-1 block">TikTok</label>
+              <input
+                type="url"
+                value={form.tiktok_url ?? ""}
+                onChange={(e) => setForm({ ...form, tiktok_url: e.target.value })}
+                className="input"
+                placeholder="https://tiktok.com/@..."
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Accreditations */}
+      <div className="border-t border-gray-100 pt-4 mt-2">
+        <h3 className="text-sm font-bold text-gray-900 mb-3">📜 Accreditations & Licences</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-semibold mb-1 block">SESSA registration number</label>
+            <input
+              value={form.sessa_number ?? ""}
+              onChange={(e) => setForm({ ...form, sessa_number: e.target.value })}
+              className="input"
+              placeholder="e.g. SE-12345"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold mb-1 block">LPGSA registration number</label>
+            <input
+              value={form.lpgsa_number ?? ""}
+              onChange={(e) => setForm({ ...form, lpgsa_number: e.target.value })}
+              className="input"
+              placeholder="e.g. LP-12345"
+            />
+          </div>
+        </div>
+      </div>
+
       <button type="submit" disabled={saving} className="btn-primary">
         {saving ? "Saving..." : saved ? "✓ Saved" : "Save changes"}
       </button>

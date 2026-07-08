@@ -357,6 +357,89 @@ export default async function PlumberPage({
             </Panel>
           )}
 
+          {/* Website & Social Links */}
+          {(plumber.website_url || plumber.facebook_url || plumber.instagram_url || plumber.tiktok_url) && (
+            <Panel title="Website & Social Media">
+              <div className="flex flex-wrap gap-3">
+                {plumber.website_url && (
+                  <a
+                    href={plumber.website_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg hover:border-brand hover:bg-brand-light transition-all text-sm font-medium"
+                  >
+                    🌐 Website
+                  </a>
+                )}
+                {plumber.facebook_url && (
+                  <a
+                    href={plumber.facebook_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg hover:border-blue-400 transition-all text-sm font-medium text-blue-700"
+                  >
+                    📘 Facebook
+                  </a>
+                )}
+                {plumber.instagram_url && (
+                  <a
+                    href={plumber.instagram_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-pink-50 border border-pink-200 rounded-lg hover:border-pink-400 transition-all text-sm font-medium text-pink-700"
+                  >
+                    📷 Instagram
+                  </a>
+                )}
+                {plumber.tiktok_url && (
+                  <a
+                    href={plumber.tiktok_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg hover:border-gray-400 transition-all text-sm font-medium"
+                  >
+                    🎵 TikTok
+                  </a>
+                )}
+              </div>
+            </Panel>
+          )}
+
+          {/* Accreditations */}
+          {(plumber.pirb_number || plumber.sessa_number || plumber.lpgsa_number) && (
+            <Panel title="Accreditations & Licences">
+              <div className="flex flex-col gap-2">
+                {plumber.pirb_number && (
+                  <div className="flex items-center gap-3 p-3 bg-teal-50 border border-teal-200 rounded-lg">
+                    <span className="text-lg">✓</span>
+                    <div>
+                      <div className="text-sm font-semibold text-teal-800">PIRB Registered</div>
+                      <div className="text-xs text-teal-600">{plumber.pirb_number}</div>
+                    </div>
+                  </div>
+                )}
+                {plumber.sessa_number && (
+                  <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <span className="text-lg">✓</span>
+                    <div>
+                      <div className="text-sm font-semibold text-blue-800">SESSA Registered</div>
+                      <div className="text-xs text-blue-600">{plumber.sessa_number}</div>
+                    </div>
+                  </div>
+                )}
+                {plumber.lpgsa_number && (
+                  <div className="flex items-center gap-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                    <span className="text-lg">✓</span>
+                    <div>
+                      <div className="text-sm font-semibold text-purple-800">LPGSA Registered</div>
+                      <div className="text-xs text-purple-600">{plumber.lpgsa_number}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Panel>
+          )}
+
           <Panel title="Specialties">
             <div className="flex flex-wrap gap-2">
               {(plumber.specialties as string[]).map((s: string) => (
