@@ -21,6 +21,7 @@ export function Footer() {
             { href: "/", label: "Find a plumber" },
             { href: "/all-plumbers", label: "Browse all plumbers" },
             { href: "/?filter=emergency", label: "Emergency callouts" },
+            { href: "/blog", label: "Plumbing blog" },
             { href: "/about", label: "How it works" },
             { href: "/trust", label: "Trust & safety" },
           ]}

@@ -66,7 +66,34 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.9,
     },
     // /register, /login, /claim excluded — blocked in robots.txt
+    {
+      url: `${SITE_URL}/blog`,
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.8,
+    },
   ];
+
+  // Blog articles — high priority for SEO
+  let blogArticles: Array<{ slug: string; publish_date: string | null }> = [];
+  try {
+    const { data } = await supabase
+      .from("articles")
+      .select("slug, publish_date")
+      .order("publish_date", { ascending: false });
+    blogArticles = data ?? [];
+  } catch (err) {
+    console.error("[sitemap] Failed to fetch articles:", err);
+  }
+
+  for (const article of blogArticles) {
+    entries.push({
+      url: `${SITE_URL}/blog/${article.slug}`,
+      lastModified: article.publish_date ? new Date(article.publish_date) : now,
+      changeFrequency: "monthly",
+      priority: 0.8,
+    });
+  }
 
   // SEO content pages — high priority since these target search traffic
   for (const page of seoPages) {

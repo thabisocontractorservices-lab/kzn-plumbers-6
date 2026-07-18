@@ -77,6 +77,12 @@ export function MobileMenu({
                 active={pathname === "/"}
                 onClick={close}
               />
+              <MobileLink
+                href="/blog"
+                label="📝 Blog"
+                active={pathname.startsWith("/blog")}
+                onClick={close}
+              />
 
               {!isLoggedIn && (
                 <MobileLink

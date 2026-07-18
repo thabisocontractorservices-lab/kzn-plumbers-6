@@ -37,6 +37,12 @@ export async function Navbar() {
           >
             Find a Plumber
           </Link>
+          <Link
+            href="/blog"
+            className="text-white/85 hover:text-white px-3 py-1.5 rounded-md hover:bg-white/10 text-sm font-semibold"
+          >
+            Blog
+          </Link>
           {!user && (
             <Link
               href="/register"
