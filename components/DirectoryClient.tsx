@@ -130,12 +130,16 @@ export function DirectoryClient({
     }
 
     // Score each plumber to determine sort priority
+    // WhatsApp + reviews heavily weighted so they appear in the top 3
     const engagementScore = (p: Plumber) => {
       let score = 0;
       if (p.profile_id) score += 3;
+      // WhatsApp available (not a landline) — high priority
+      if (p.whatsapp_number && /^(0[678]|27[678])/.test(p.whatsapp_number.replace(/\D/g, ""))) score += 3;
+      // Has internal reviews — high priority
+      if (p.reviews && p.reviews.length > 0) score += 3;
       if (p.photos && p.photos.length > 0) score += 2;
       if (p.certifications && p.certifications.length > 0) score += 1;
-      if (p.reviews && p.reviews.length > 0) score += 1;
       return score;
     };
 
