@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PlumberCard } from "./PlumberCard";
 import type { Plumber } from "@/types/database";
 
@@ -90,6 +90,15 @@ export function DirectoryClient({
     return r;
   }, [initialPlumbers, filter, areaFilter, query, sort]);
 
+  const INITIAL_COUNT = 3;
+  const LOAD_MORE_COUNT = 6;
+  const [visibleCount, setVisibleCount] = useState(INITIAL_COUNT);
+
+  // Reset visible count when filters change
+  useEffect(() => {
+    setVisibleCount(INITIAL_COUNT);
+  }, [filter, areaFilter, query, sort]);
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
       <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-5 mb-5 sm:mb-6 shadow-sm flex flex-col gap-3">
@@ -149,11 +158,33 @@ export function DirectoryClient({
           <div className="text-sm text-gray-500">Try clearing some filters or broadening your search.</div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filtered.map((p) => (
-            <PlumberCard key={p.id} plumber={p} />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+            {filtered.slice(0, visibleCount).map((p) => (
+              <PlumberCard key={p.id} plumber={p} />
+            ))}
+          </div>
+          {visibleCount < filtered.length && (
+            <div className="text-center mt-6 sm:mt-8">
+              <button
+                onClick={() => setVisibleCount((prev) => prev + LOAD_MORE_COUNT)}
+                className="btn-secondary px-8 py-3 text-sm font-semibold"
+              >
+                Show more plumbers ({filtered.length - visibleCount} remaining)
+              </button>
+            </div>
+          )}
+          {visibleCount >= filtered.length && filtered.length > INITIAL_COUNT && (
+            <div className="text-center mt-6 sm:mt-8">
+              <button
+                onClick={() => setVisibleCount(INITIAL_COUNT)}
+                className="text-sm text-gray-500 hover:text-brand transition-colors"
+              >
+                Show less ↑
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
