@@ -42,15 +42,47 @@ export function ClaimFlow({
 
     try {
       if (mode === "register") {
-        const { error: signUpError } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
-            data: { full_name: fullName, role: "plumber" },
-          },
+        // Use server-side instant signup — no email confirmation needed
+        // This creates the user via admin API (auto-confirmed) so we can
+        // sign in immediately and proceed with the claim
+        const res = await fetch("/api/register/homeowner", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: fullName,
+            email,
+            area: "",
+            password,
+          }),
         });
-        if (signUpError) throw signUpError;
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          if (data.alreadyExists) {
+            // Account exists — try signing in instead
+            const { error: signInError } = await supabase.auth.signInWithPassword({
+              email,
+              password,
+            });
+            if (signInError) {
+              setError("An account with this email already exists. Please switch to 'I have an account' and log in.");
+              setLoading(false);
+              return;
+            }
+          } else {
+            throw new Error(data.error ?? "Could not create account");
+          }
+        } else {
+          // Account created — sign in immediately
+          const { error: signInError } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
+          if (signInError) {
+            throw new Error("Account created but could not sign in. Please use the login page.");
+          }
+        }
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
