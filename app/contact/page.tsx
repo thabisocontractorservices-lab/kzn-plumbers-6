@@ -107,8 +107,8 @@ export default function ContactPage() {
               <ContactCard
                 icon="💬"
                 title="WhatsApp"
-                value="Chat with us on WhatsApp"
-                href="https://wa.me/27785119555?text=Hi%2C%20I%20have%20a%20question%20about%20KZN%20Plumbers%20Directory."
+                value="060 992 2848"
+                href="https://wa.me/27609922848?text=Hi%2C%20I%20have%20a%20question%20about%20KZN%20Plumbers%20Directory."
               />
               <ContactCard
                 icon="🌐"
