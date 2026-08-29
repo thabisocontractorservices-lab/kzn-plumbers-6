@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { supabase } from "@/src/supabaseClient";
+import { getPublicSupabase } from "@/lib/supabase/public";
 
 export const revalidate = 3600; // refresh hourly
 
 export const metadata: Metadata = {
   title: "Plumbing Blog — KZN Plumbers Directory",
   description:
-    "Expert plumbing tips, maintenance guides, and KwaZulu-Natal plumbing news. Stay informed with the latest from KZN Plumbers Directory.",
+    "Practical, sourced plumbing guidance for KwaZulu-Natal homeowners, including maintenance, compliance and local service information.",
+  alternates: { canonical: "/blog" },
 };
 
 type Article = {
@@ -21,10 +22,13 @@ type Article = {
 };
 
 export default async function BlogPage() {
-  const { data: articles } = await supabase
-    .from("articles")
-    .select("id, title, slug, meta_description, keywords, publish_date, word_count")
-    .order("publish_date", { ascending: false });
+  const supabase = getPublicSupabase();
+  const { data: articles } = supabase
+    ? await supabase
+        .from("articles")
+        .select("id, title, slug, meta_description, keywords, publish_date, word_count")
+        .order("publish_date", { ascending: false })
+    : { data: [] as Article[] };
 
   const posts = (articles ?? []) as Article[];
 
@@ -37,7 +41,7 @@ export default async function BlogPage() {
             Plumbing Blog
           </h1>
           <p className="text-sm sm:text-lg opacity-90 max-w-xl mx-auto">
-            Expert tips, maintenance guides, and local plumbing news for KwaZulu-Natal homeowners.
+            Practical, sourced guidance for KwaZulu-Natal homeowners—without recycled town-name pages.
           </p>
         </div>
       </section>

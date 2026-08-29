@@ -17,6 +17,7 @@ type Application = {
   pirb_number: string | null;
   specialties: string[];
   is_verified: boolean;
+  record_status?: "pending" | "published" | "rejected" | "suspended" | "merged";
   created_at: string;
   certifications?: Array<{ count: number }>;
   photos?: Array<{ count: number }>;
@@ -85,7 +86,7 @@ function AdminPageInner() {
 
       if (!mounted) return;
 
-      setApplications((appsRes.data as Application[]) ?? []);
+      setApplications(((appsRes.data as Application[]) ?? []).filter((app) => app.record_status !== "rejected" && app.record_status !== "merged"));
       setPending(pendingRes.count ?? 0);
       setApproved(approvedRes.count ?? 0);
       setClaimsPending(claimsCountRes.count ?? 0);

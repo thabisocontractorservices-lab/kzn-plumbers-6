@@ -1,111 +1,118 @@
 # KZN Plumbers Directory
 
-A verified plumber listing platform for KwaZulu-Natal, South Africa. Built with Next.js 14 (App Router), Supabase, and the Google Places API.
+A KwaZulu-Natal-specific marketplace and directory that helps homeowners compare plumbing businesses by service area, job type, transparent verification state, and direct contact.
+
+## What changed in this release
+
+- Replaced the full-dataset homepage payload with bounded server-side search and 12-result pages.
+- Added seven regional collections and eight service collections with live inventory above the fold.
+- Separated three trust states: credential verified, business claimed, and directory record.
+- Added verification provenance, expiry, listing status, lead events, booking outcomes, page dispositions, and redirect governance through a reversible migration.
+- Added lead analytics for search, filters, calls, WhatsApp, bookings, and claims.
+- Added Trust, Help, Corrections, Complaints, and sourced KZN homeowner resources.
+- Added canonical controls, host redirects, crawlable pagination, split sitemaps, safer robots rules, breadcrumbs, and structured data.
+- Hardened registration, claims, file uploads, profile privacy, review accounts, and email rendering.
+- Upgraded to Next.js 16.3.1 and removed known production dependency vulnerabilities.
+- Added read-only SEO and plumber-data audit scripts, automated tests, and a built-site verification script.
 
 ## Stack
 
-- **Frontend**: Next.js 14 (App Router) + Tailwind CSS + TypeScript
-- **Backend**: Supabase (Postgres, Auth, Storage, RLS)
-- **Auth**: Supabase Auth with Google OAuth
-- **Reviews**: Google Places API (New) v1
-- **Calendar**: Google Calendar booking links (paste-and-go)
-- **Messaging**: WhatsApp via `wa.me` links
-- **Deployment**: Vercel
+- Next.js 16 App Router
+- React 19 and TypeScript
+- Tailwind CSS 3
+- Supabase Postgres, Auth, Storage, and RLS
+- Vercel deployment from GitHub
+- Resend for transactional email
+- Google Places API New for cached Google review data
+- Google Analytics 4, loaded only after visitor consent
 
-## Quick start
+## Required environment variables
+
+Copy `.env.example` to `.env.local` for local development. Never commit `.env.local`.
+
+Required:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `NEXT_PUBLIC_SITE_URL`
+- `CRON_SECRET`
+- `GOOGLE_API_KEY`
+- `RESEND_API_KEY`
+- `ADMIN_EMAIL`
+- `FROM_EMAIL`
+
+Optional:
+
+- `NEXT_PUBLIC_GA_ID`
+
+## Local setup
 
 ```bash
-# 1. Install deps
 npm install
-
-# 2. Copy env and fill in
-cp .env.example .env.local
-
-# 3. Start Supabase (local) and apply migrations
-npx supabase start
-npx supabase db reset
-
-# OR push to a hosted Supabase project
-npx supabase link --project-ref <your-ref>
-npx supabase db push
-
-# 4. Seed an admin (optional)
-psql $DATABASE_URL < supabase/seed.sql
-
-# 5. Run dev server
 npm run dev
 ```
 
-## Environment variables
+Production checks:
 
-See `.env.example` — you need:
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (formerly the anon key — Supabase's new naming)
-- `SUPABASE_SERVICE_ROLE_KEY` (server-only — never expose)
-- `GOOGLE_API_KEY` (with Places API New + Calendar API enabled)
-- `NEXT_PUBLIC_SITE_URL`
-- `CRON_SECRET` (random string for cron auth)
-
-## Project structure
-
-```
-app/
-  page.tsx                       # Public directory
-  register/page.tsx              # Plumber registration (4-step wizard)
-  login/page.tsx                 # Login (plumber + homeowner)
-  plumber/[id]/page.tsx          # Public plumber profile
-  dashboard/                     # Plumber-only dashboard
-    page.tsx
-    profile/page.tsx
-    reviews/page.tsx
-    bookings/page.tsx
-  admin/page.tsx                 # Admin approval panel
-  review/[slug]/route.ts         # Short link redirect
-  api/
-    places/details/route.ts      # Google Places API proxy
-    bookings/route.ts            # Booking submissions
-    cron/refresh-google/route.ts # Daily review refresh (Vercel cron)
-  auth/callback/route.ts         # OAuth callback
-components/                      # Shared UI components
-utils/
-  supabase/                      # Supabase client (browser/server/middleware)
-    client.ts                    # Browser client
-    server.ts                    # RSC + service role client
-    middleware.ts                # Session refresh + route gating
-lib/
-  google/places.ts               # Google Places API wrapper
-  utils.ts                       # Shared utilities (combinedRating, whatsAppLink, etc.)
-supabase/
-  migrations/                    # 6 SQL migration files
-  seed.sql                       # Optional admin seed
-types/
-  database.ts                    # DB types (run `npm run supabase:types` to regenerate)
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
 ```
 
-## Deploy to Vercel
+After starting a production build on port 3100:
 
-1. Push to GitHub
-2. Import the repo on https://vercel.com/new
-3. Add all env vars from `.env.example`
-4. Deploy
-5. Connect custom domain `kznplumbers.co.za`
-6. Cron job (`/api/cron/refresh-google`) runs daily at 03:00 UTC — see `vercel.json`
+```bash
+npm run verify:preview
+```
 
-## Launch checklist
+## Database rollout
 
-- [ ] Supabase project created and linked
-- [ ] Migrations applied (`supabase db push`)
-- [ ] Storage buckets created (`certs`, `photos`, `avatars`)
-- [ ] Google Cloud project with Places API + Calendar API enabled
-- [ ] Google OAuth client configured (Authorized redirect URI: `https://<project>.supabase.co/auth/v1/callback`)
-- [ ] Vercel project created and env vars set
-- [ ] Custom domain configured
-- [ ] Admin account seeded (`supabase/seed.sql`)
-- [ ] Test plumber registration end-to-end
-- [ ] Test Google review link generation
-- [ ] Test WhatsApp booking flow
-- [ ] Go live
+No live database changes are performed by this repository. Review and run the scripts manually in Supabase.
 
-## License
+1. Export a database backup.
+2. Run `scripts/007_growth_trust_seo_dry_run.sql`.
+3. Resolve duplicate reviews that would block the unique review index.
+4. Review the generated reports in `reports/`.
+5. Deploy the new code against the legacy staging schema and run the smoke tests.
+6. Apply `supabase/migrations/007_growth_trust_seo.sql` in staging, then repeat the tests.
+7. In production, promote the backward-compatible code first, run a short smoke test, then apply the migration and repeat the tests.
 
-MIT
+Rollback SQL is in `supabase/rollback/007_growth_trust_seo_rollback.sql`. It is destructive to newly captured data, so export the new tables and columns before using it.
+
+## Read-only audit scripts
+
+```bash
+npm run audit:content
+npm run audit:plumbers
+```
+
+Both scripts read Supabase and write CSV/JSON reports locally. They do not update records.
+
+Current generated reports include:
+
+- `reports/seo-page-inventory.csv`
+- `reports/seo-page-inventory-summary.json`
+- `reports/plumber-data-audit.csv`
+- `reports/plumber-data-audit-summary.json`
+- `reports/plumber-duplicate-candidates.csv`
+
+The current content report recommends review of 311 pages for retention, 204 for possible merge, 44 for possible noindex, and 4 off-scope removals. The plumber report identifies 478 legacy generated-description patterns and limits the current profile sitemap to 854 records with at least one substantive signal.
+
+These are triage suggestions, not automatic deletion decisions. Add current Search Console demand, backlinks, conversions, and live provider inventory before approving redirects or removals.
+
+## Trust rules
+
+- A claimed business is not automatically credential verified.
+- An uploaded certificate is private evidence, not a public download or permanent proof.
+- Imported records must not imply endorsement, current availability, or credential status.
+- Verification, reviews, or organic ranking cannot be purchased.
+- No prices, ratings, response times, or credentials may be invented.
+
+See `/trust` and `CONTENT-PRINCIPLES.md` for the public and editorial standards.
+
+## Deployment
+
+Use GitHub as the source repository and Vercel as the runtime. Follow `DEPLOYMENT-RUNBOOK.md` for the staged database, code, analytics, and search migration.

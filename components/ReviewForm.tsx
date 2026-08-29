@@ -22,6 +22,7 @@ export function ReviewForm({ plumberId }: { plumberId: string }) {
   const [signupPassword, setSignupPassword] = useState("");
   const [signupError, setSignupError] = useState<string | null>(null);
   const [signupSubmitting, setSignupSubmitting] = useState(false);
+  const [signupConfirmation, setSignupConfirmation] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -46,50 +47,28 @@ export function ReviewForm({ plumberId }: { plumberId: string }) {
     setSignupSubmitting(true);
 
     try {
-      // Create account via server API — no email confirmation required
-      const res = await fetch("/api/register/homeowner", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: signupName,
-          email: signupEmail,
-          area: signupAddress,
-          password: signupPassword,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setSignupError(data.error ?? "Could not create account.");
-        setSignupSubmitting(false);
-        return;
-      }
-
-      // Sign in immediately with the new credentials
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signUp({
         email: signupEmail,
         password: signupPassword,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(window.location.pathname)}`,
+          data: {
+            full_name: signupName,
+            role: "homeowner",
+            area: signupAddress,
+          },
+        },
       });
-
-      if (signInError) {
-        setSignupError("Account created but could not sign in. Please go to the login page.");
-        setSignupSubmitting(false);
-        return;
-      }
-
-      // Get the signed-in user
-      const { data: { user: newUser } } = await supabase.auth.getUser();
-      if (newUser) {
-        setUser(newUser);
-        setUserName(signupName);
-        setSignupMode(false);
-      }
-    } catch {
-      setSignupError("Something went wrong. Please try again.");
+      if (error) throw error;
+      setSignupConfirmation(true);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not create the account.";
+      setSignupError(/already|registered|exists/i.test(message)
+        ? "An account with this email may already exist. Try signing in instead."
+        : "Could not create the account. Please try again.");
+    } finally {
+      setSignupSubmitting(false);
     }
-
-    setSignupSubmitting(false);
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -118,6 +97,18 @@ export function ReviewForm({ plumberId }: { plumberId: string }) {
   }
 
   if (checking) return null;
+
+  if (signupConfirmation) {
+    return (
+      <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 p-5">
+        <div className="font-display text-lg font-bold text-blue-950">Confirm your email before reviewing</div>
+        <p className="mt-2 text-sm leading-relaxed text-blue-900">
+          We sent a confirmation link to <strong>{signupEmail}</strong>. Confirm the address, sign in, then return to this profile to post the review.
+        </p>
+        <a href="/login" className="btn-primary mt-4">Go to sign in</a>
+      </div>
+    );
+  }
 
   // Not logged in and not in signup mode — show prompt to create account
   if (!user && !signupMode) {
@@ -215,7 +206,7 @@ export function ReviewForm({ plumberId }: { plumberId: string }) {
         </div>
 
         <p className="text-xs text-gray-400 mt-3">
-          Your account will be created instantly. No email confirmation needed.
+          Email confirmation helps reduce fake and duplicate review accounts.
         </p>
       </form>
     );
@@ -235,17 +226,20 @@ export function ReviewForm({ plumberId }: { plumberId: string }) {
         <div className="text-xs font-semibold text-gray-700 mb-1">Rating</div>
         <div className="flex gap-1 text-2xl sm:text-3xl select-none">
           {[1, 2, 3, 4, 5].map((s) => (
-            <span
+            <button
+              type="button"
               key={s}
               onClick={() => setRating(s)}
               onMouseEnter={() => setHover(s)}
               onMouseLeave={() => setHover(0)}
+              aria-label={`${s} star${s === 1 ? "" : "s"}`}
+              aria-pressed={rating === s}
               className={`cursor-pointer transition-colors ${
                 s <= (hover || rating) ? "text-amber-500" : "text-gray-300"
               }`}
             >
               ★
-            </span>
+            </button>
           ))}
         </div>
       </div>

@@ -1,782 +1,324 @@
 import type { Metadata } from "next";
-import { supabase } from "@/src/supabaseClient";
+import Image from "next/image";
+import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  callLink,
-  combinedRating,
-  formatRand,
-  formatWhatsApp,
-  initials,
-  isLandline,
-  whatsAppLink,
-} from "@/lib/utils";
-import { reviewUrl } from "@/lib/google/places";
+import { BadgeCheck, Building2, CalendarDays, Clock3, ExternalLink, FileCheck2, Globe2, MapPin, MessageCircle, Phone, ShieldQuestion, Star } from "lucide-react";
 import { BookingForm } from "@/components/BookingForm";
+import { PlumberCard } from "@/components/PlumberCard";
+import { ProfileViewTracker } from "@/components/ProfileViewTracker";
 import { ReviewForm } from "@/components/ReviewForm";
 import { ReviewLinkPanel } from "@/components/ReviewLinkPanel";
+import { TrackedContactLink } from "@/components/TrackedContactLink";
+import { getPublicPlumbers } from "@/lib/directory-data";
+import { isIndexableProfile, usableProfileAbout } from "@/lib/content-quality";
+import { safeJsonLd } from "@/lib/json-ld";
+import { reviewUrl } from "@/lib/google/places";
+import { regionForArea } from "@/lib/regions";
+import { absoluteUrl, SITE_NAME } from "@/lib/site";
+import { getPublicSupabase } from "@/lib/supabase/public";
+import { callLink, formatRand, formatWhatsApp, initials, isLandline, whatsAppLink } from "@/lib/utils";
+import { formattedVerificationDate, getVerificationState, verificationDescription, verificationLabel, verificationTone } from "@/lib/verification";
 
-export const revalidate = 300; // 5 min
+export const revalidate = 300;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// generateMetadata — Produces a UNIQUE <title>, <meta description>, canonical
-// URL, and Open Graph tags for every plumber profile.
-//
-// Without this, all 1,217 profiles were served with the same default metadata
-// from app/layout.tsx, which caused Google to treat them as duplicates and
-// refuse to index them ("Crawled - currently not indexed").
-// ─────────────────────────────────────────────────────────────────────────────
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}): Promise<Metadata> {
-  const { id } = await params;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  const UUID_RE =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const isUuid = UUID_RE.test(id);
+type PlumberRecord = {
+  id: string;
+  profile_id: string | null;
+  slug: string | null;
+  trading_name: string;
+  area: string;
+  hourly_rate: number | null;
+  about: string | null;
+  specialties: string[];
+  is_emergency: boolean;
+  availability_status: "available" | "busy" | "unavailable";
+  accepts_new_work?: boolean | null;
+  whatsapp_number: string;
+  pirb_number: string | null;
+  sessa_number: string | null;
+  lpgsa_number: string | null;
+  verification_state?: "credential_verified" | "business_claimed" | "directory_record" | null;
+  credential_verified_at?: string | null;
+  last_checked_at?: string | null;
+  website_url: string | null;
+  facebook_url: string | null;
+  instagram_url: string | null;
+  tiktok_url: string | null;
+  google_place_id: string | null;
+  google_rating: number | null;
+  google_review_count: number | null;
+  google_calendar_url: string | null;
+  photos: Array<{ id?: string; photo_url: string; is_profile_photo: boolean; caption?: string | null }>;
+  certifications: Array<{ id: string; cert_name: string }>;
+  reviews: Array<{ id: string; reviewer_name: string; rating: number; comment: string | null; created_at: string }>;
+  google_reviews: Array<{ id: string; reviewer_name: string; rating: number; text: string | null; review_time: string | null }>;
+};
 
+async function getPlumber(id: string, details = false): Promise<PlumberRecord | null> {
+  const supabase = getPublicSupabase();
+  if (!supabase) return null;
   const query = supabase
     .from("plumbers")
-    .select(
-      "trading_name, area, specialties, about, is_certified, is_emergency, slug, photos(photo_url, is_profile_photo)",
-    )
+    .select(details
+      ? "*, profile:profiles(full_name), certifications(*), photos(*), reviews(*), google_reviews(*)"
+      : "trading_name, area, specialties, about, is_emergency, slug, profile_id, verification_state, credential_verified_at, last_checked_at, google_review_count, photos(photo_url, is_profile_photo)")
     .eq("is_verified", true);
+  const result = UUID_RE.test(id) ? query.eq("id", id) : query.eq("slug", id);
+  const { data, error } = await result.maybeSingle();
+  if (!error) return data as unknown as PlumberRecord | null;
+  if (details) return null;
 
-  const { data: plumber } = await (
-    isUuid ? query.eq("id", id) : query.eq("slug", id)
-  ).single<{
-    trading_name: string;
-    area: string;
-    specialties: string[] | null;
-    about: string | null;
-    is_certified: boolean;
-    is_emergency: boolean;
-    slug: string | null;
-    photos: Array<{ photo_url: string; is_profile_photo: boolean }> | null;
-  }>();
+  const fallback = supabase
+    .from("plumbers")
+    .select("trading_name, area, specialties, about, is_emergency, slug, profile_id, google_review_count, photos(photo_url, is_profile_photo)")
+    .eq("is_verified", true);
+  const retry = UUID_RE.test(id) ? fallback.eq("id", id) : fallback.eq("slug", id);
+  return (await retry.maybeSingle()).data as unknown as PlumberRecord | null;
+}
 
-  if (!plumber) {
-    return {
-      title: "Plumber not found — KZN Plumbers",
-      description:
-        "This plumber profile could not be found. Browse verified plumbers across KwaZulu-Natal at kznplumbers.co.za.",
-    };
-  }
-
-  const certified = plumber.is_certified ? "PIRB-certified" : "verified";
-  const specs = (plumber.specialties ?? [])
-    .slice(0, 3)
-    .join(", ")
-    .toLowerCase();
-  const emergency = plumber.is_emergency
-    ? " 24/7 emergency call-out available."
-    : "";
-
-  const title = `${plumber.trading_name} — ${certified} plumber in ${plumber.area} | KZN Plumbers`;
-
-  const description = plumber.about
-    ? plumber.about.slice(0, 155) + (plumber.about.length > 155 ? "…" : "")
-    : `${plumber.trading_name} offers ${
-        specs || "professional plumbing services"
-      } in ${plumber.area}, KwaZulu-Natal. ${
-        certified === "PIRB-certified"
-          ? "PIRB certified."
-          : "Verified directory listing."
-      }${emergency} Get a quote via WhatsApp.`;
-
-  const profilePhoto =
-    plumber.photos?.find((p) => p.is_profile_photo)?.photo_url ?? null;
-
-  const canonical = `https://www.kznplumbers.co.za/plumber/${
-    plumber.slug ?? id
-  }`;
-
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  const plumber = await getPlumber(id);
+  if (!plumber) return { title: "Plumber not found | KZN Plumbers", robots: { index: false, follow: true } };
+  const canonical = `/plumber/${plumber.slug ?? id}`;
+  const services = (plumber.specialties ?? []).slice(0, 3).join(", ");
+  const title = `${plumber.trading_name} — Plumber in ${plumber.area} | KZN Plumbers`;
+  const about = usableProfileAbout(plumber.about);
+  const indexable = isIndexableProfile(plumber);
+  const description = about
+    ? `${about.slice(0, 145)}${about.length > 145 ? "…" : ""}`
+    : `${plumber.trading_name} directory profile for ${plumber.area}, KZN${services ? `, listing ${services}` : ""}. Check verification state and contact details.`;
+  const profilePhoto = plumber.photos?.find((photo: { is_profile_photo: boolean }) => photo.is_profile_photo)?.photo_url;
   return {
     title,
     description,
     alternates: { canonical },
-    openGraph: {
-      title,
-      description,
-      url: canonical,
-      siteName: "KZN Plumbers",
-      type: "profile",
-      locale: "en_ZA",
-      ...(profilePhoto && { images: [{ url: profilePhoto }] }),
-    },
-    twitter: {
-      card: "summary_large_image",
-      title,
-      description,
-      ...(profilePhoto && { images: [profilePhoto] }),
-    },
+    robots: indexable ? { index: true, follow: true } : { index: false, follow: true },
+    openGraph: { title, description, url: absoluteUrl(canonical), siteName: SITE_NAME, type: "profile", locale: "en_ZA", ...(profilePhoto ? { images: [{ url: profilePhoto }] } : {}) },
+    twitter: { card: "summary_large_image", title, description, ...(profilePhoto ? { images: [profilePhoto] } : {}) },
   };
 }
 
-export default async function PlumberPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function PlumberPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-
-  // Resolve by slug or UUID. We can't use .or(id.eq.X,slug.eq.X) because
-  // Postgres errors when casting a non-UUID string to the uuid `id` column,
-  // so detect the format first and pick the right column.
-  const UUID_RE =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const isUuid = UUID_RE.test(id);
-
-  const baseQuery = supabase
-    .from("plumbers")
-    .select(
-      `
-      *,
-      profile:profiles(full_name, email),
-      certifications(*),
-      photos(*),
-      reviews(*),
-      google_reviews(*)
-    `,
-    )
-    .eq("is_verified", true);
-
-  const { data: plumber } = await (
-    isUuid ? baseQuery.eq("id", id) : baseQuery.eq("slug", id)
-  ).single();
-
+  const plumber = await getPlumber(id, true);
   if (!plumber) notFound();
 
-  // Pull 4 more plumbers in the same area for the "More plumbers in [Area]"
-  // section at the bottom. Top-rated first.
-  const { data: relatedPlumbersRaw } = await supabase
-    .from("plumbers")
-    .select("id, slug, trading_name, area, specialties, hourly_rate, google_rating, google_review_count, is_certified, is_emergency, availability_status, whatsapp_number")
-    .eq("is_verified", true)
-    .eq("area", plumber.area)
-    .neq("id", plumber.id)
-    .order("google_rating", { ascending: false, nullsFirst: false })
-    .limit(4);
-  const relatedPlumbers = relatedPlumbersRaw ?? [];
-
-  const r = combinedRating(
-    plumber.google_rating,
-    plumber.google_review_count,
-    (plumber.ratings as { internal_rating?: number })?.internal_rating,
-    (plumber.ratings as { internal_count?: number })?.internal_count,
-  );
-
-  const profilePhoto =
-    (plumber.photos as Array<{ photo_url: string; is_profile_photo: boolean }>)
-      ?.find((p) => p.is_profile_photo)
-      ?.photo_url ?? null;
-
-  const workPhotos =
-    (plumber.photos as Array<{ photo_url: string; is_profile_photo: boolean }>)
-      ?.filter((p) => !p.is_profile_photo) ?? [];
-
-  const reviewLink = plumber.google_place_id
-    ? reviewUrl(plumber.google_place_id)
-    : null;
-
-  // Pre-compute CTA props to avoid duplicating the logic
-  const waLink = whatsAppLink(
-    plumber.whatsapp_number,
-    `Hi, I found ${plumber.trading_name} on kznplumbers.co.za and would like to get a quote for ${(plumber.specialties?.[0] ?? "plumbing work").toString().toLowerCase()} in ${plumber.area}.`,
-  );
+  const state = getVerificationState(plumber);
+  const profileAbout = usableProfileAbout(plumber.about);
+  const stateDate = formattedVerificationDate(plumber.credential_verified_at || plumber.last_checked_at);
+  const profilePhoto = plumber.photos?.find((photo: { is_profile_photo: boolean }) => photo.is_profile_photo)?.photo_url ?? null;
+  const workPhotos = (plumber.photos ?? []).filter((photo: { is_profile_photo: boolean }) => !photo.is_profile_photo).slice(0, 9);
+  const primaryService = plumber.specialties?.[0] ?? "plumbing work";
+  const contactMessage = `Hi, I found ${plumber.trading_name} on kznplumbers.co.za and would like to get a quote for ${primaryService.toLowerCase()} in ${plumber.area}.`;
+  const waLink = whatsAppLink(plumber.whatsapp_number, contactMessage);
   const phoneLink = callLink(plumber.whatsapp_number);
   const landline = isLandline(plumber.whatsapp_number);
+  const googleReviewLink = plumber.google_place_id ? reviewUrl(plumber.google_place_id) : null;
+  const region = regionForArea(plumber.area);
+  const certifications = plumber.certifications ?? [];
+  const internalReviews = plumber.reviews ?? [];
+  const googleReviews = plumber.google_reviews ?? [];
+  const { plumbers: relatedRaw } = await getPublicPlumbers({ areas: [plumber.area], limit: 5 });
+  const related = relatedRaw.filter((item) => item.id !== plumber.id).slice(0, 3);
+  const externalLinks = [
+    { label: "Website", url: safeUrl(plumber.website_url) },
+    { label: "Facebook", url: safeUrl(plumber.facebook_url) },
+    { label: "Instagram", url: safeUrl(plumber.instagram_url) },
+    { label: "TikTok", url: safeUrl(plumber.tiktok_url) },
+  ].filter((item): item is { label: string; url: string } => Boolean(item.url));
 
-  // LocalBusiness JSON-LD for rich Google results (star ratings, business info)
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "Plumber",
-    name: plumber.trading_name,
-    url: `https://www.kznplumbers.co.za/plumber/${plumber.slug ?? plumber.id}`,
-    telephone: `+${formatWhatsApp(plumber.whatsapp_number)}`,
-    address: {
-      "@type": "PostalAddress",
-      addressLocality: plumber.area,
-      addressRegion: "KwaZulu-Natal",
-      addressCountry: "ZA",
+  const canonical = `/plumber/${plumber.slug ?? plumber.id}`;
+  const entityType = state === "directory_record" ? "Organization" : "Plumber";
+  const jsonLd = [
+    {
+      "@context": "https://schema.org",
+      "@type": entityType,
+      name: plumber.trading_name,
+      url: absoluteUrl(canonical),
+      telephone: `+${formatWhatsApp(plumber.whatsapp_number)}`,
+      address: { "@type": "PostalAddress", addressLocality: plumber.area, addressRegion: "KwaZulu-Natal", addressCountry: "ZA" },
+      areaServed: { "@type": "AdministrativeArea", name: `${plumber.area}, KwaZulu-Natal` },
+      ...(profilePhoto ? { image: profilePhoto } : {}),
+      ...(profileAbout ? { description: profileAbout } : {}),
+      ...(externalLinks.length ? { sameAs: externalLinks.map((item) => item.url) } : {}),
+      ...(state === "credential_verified" && plumber.pirb_number
+        ? { hasCredential: { "@type": "EducationalOccupationalCredential", credentialCategory: "Professional registration", name: `PIRB ${plumber.pirb_number}` } }
+        : {}),
     },
-    areaServed: {
-      "@type": "AdministrativeArea",
-      name: plumber.area + ", KwaZulu-Natal",
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Home", item: absoluteUrl("/") },
+        ...(region ? [{ "@type": "ListItem", position: 2, name: region.name, item: absoluteUrl(`/plumbers/${region.slug}`) }] : []),
+        { "@type": "ListItem", position: region ? 3 : 2, name: plumber.trading_name, item: absoluteUrl(canonical) },
+      ],
     },
-    ...(profilePhoto && { image: profilePhoto }),
-    ...(plumber.about && { description: plumber.about }),
-    priceRange: plumber.hourly_rate
-      ? `R${plumber.hourly_rate}/hr`
-      : "Contact for quote",
-    ...(r.rating && r.count > 0 && {
-      aggregateRating: {
-        "@type": "AggregateRating",
-        ratingValue: r.rating,
-        reviewCount: r.count,
-        bestRating: 5,
-        worstRating: 1,
-      },
-    }),
-    ...(plumber.is_emergency && {
-      openingHoursSpecification: {
-        "@type": "OpeningHoursSpecification",
-        dayOfWeek: [
-          "Monday", "Tuesday", "Wednesday", "Thursday",
-          "Friday", "Saturday", "Sunday",
-        ],
-        opens: "00:00",
-        closes: "23:59",
-      },
-    }),
-    ...(plumber.pirb_number && {
-      hasCredential: {
-        "@type": "EducationalOccupationalCredential",
-        credentialCategory: "Professional Licence",
-        name: `PIRB ${plumber.pirb_number}`,
-      },
-    }),
-  };
+  ];
+
+  const StateIcon = state === "credential_verified" ? BadgeCheck : state === "business_claimed" ? Building2 : ShieldQuestion;
 
   return (
     <>
-      {/* LocalBusiness JSON-LD */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
+      {jsonLd.map((item, index) => <script key={index} type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(item) }} />)}
+      <ProfileViewTracker plumberId={plumber.id} area={plumber.area} />
 
-      {/* Banner */}
-      <section className="bg-gradient-to-br from-brand to-brand-dark text-white py-6 sm:py-12 px-4 sm:px-6">
-        <div className="max-w-7xl mx-auto">
-          <a href="/" className="text-xs sm:text-sm opacity-80 hover:opacity-100 underline">
-            ← Back to directory
-          </a>
-          <div className="flex gap-3 sm:gap-6 items-start mt-3 sm:mt-4">
-            <div
-              className="w-14 h-14 sm:w-24 sm:h-24 rounded-xl sm:rounded-2xl bg-white text-brand flex items-center justify-center font-display text-xl sm:text-4xl font-bold shadow-floating shrink-0"
-              style={
-                profilePhoto
-                  ? { backgroundImage: `url(${profilePhoto})`, backgroundSize: "cover" }
-                  : undefined
-              }
-            >
-              {!profilePhoto && initials(plumber.trading_name)}
+      <header className="bg-slate-950 px-4 py-9 text-white sm:px-6 sm:py-12">
+        <div className="mx-auto max-w-7xl">
+          <nav aria-label="Breadcrumb" className="flex flex-wrap gap-2 text-sm text-slate-300">
+            <Link href="/" className="hover:text-white">Home</Link><span aria-hidden="true">/</span>
+            {region && <><Link href={`/plumbers/${region.slug}`} className="hover:text-white">{region.shortName}</Link><span aria-hidden="true">/</span></>}
+            <span>{plumber.trading_name}</span>
+          </nav>
+          <div className="mt-6 flex items-start gap-4 sm:gap-6">
+            <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-brand sm:h-28 sm:w-28">
+              {profilePhoto ? <Image src={profilePhoto} alt={`${plumber.trading_name} profile`} fill sizes="112px" className="object-cover" priority /> : <span className="flex h-full items-center justify-center font-display text-2xl font-bold">{initials(plumber.trading_name)}</span>}
             </div>
             <div className="min-w-0 flex-1">
-              <h1 className="font-display text-xl sm:text-3xl md:text-4xl mb-1 leading-tight break-words">
-                {plumber.trading_name}
-              </h1>
-              <div className="opacity-90 mb-2 sm:mb-3 text-xs sm:text-base">
-                📍 {plumber.area}
-                {plumber.hourly_rate
-                  ? ` · ${formatRand(plumber.hourly_rate)}/hr`
-                  : " · Contact for quote"}
-                {plumber.pirb_number && ` · ${plumber.pirb_number}`}
-              </div>
-              <div className="flex flex-wrap gap-1 sm:gap-1.5">
-                {plumber.is_certified && (
-                  <span className="badge bg-teal-light text-teal">✓ PIRB Certified</span>
-                )}
-                <span className={`badge ${availabilityClass(plumber.availability_status)}`}>
-                  ● {plumber.availability_status}
-                </span>
-                {plumber.is_emergency && (
-                  <span className="badge bg-emergency-light text-emergency">🚨 24/7 Emergency</span>
-                )}
-                {plumber.is_verified && (
-                  <span className="badge bg-brand-light text-brand">★ Verified</span>
-                )}
+              <h1 className="font-display text-3xl font-bold leading-tight sm:text-5xl">{plumber.trading_name}</h1>
+              <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-300 sm:text-base"><MapPin className="h-4 w-4" /> {plumber.area}{plumber.hourly_rate ? <span>· Listed rate {formatRand(plumber.hourly_rate)}/hour</span> : <span>· Written quote recommended</span>}</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${verificationTone(state)}`}><StateIcon className="h-3.5 w-3.5" /> {verificationLabel(state)}</span>
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${plumber.availability_status === "available" && plumber.accepts_new_work !== false ? "bg-emerald-100 text-emerald-900" : "bg-slate-700 text-slate-200"}`}><Clock3 className="h-3.5 w-3.5" /> {plumber.availability_status === "available" && plumber.accepts_new_work !== false ? "Taking work" : "Confirm availability"}</span>
+                {plumber.is_emergency && <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-900">24-hour call-outs listed</span>}
               </div>
             </div>
           </div>
         </div>
-      </section>
+      </header>
 
-      {/* Mobile CTA — immediately below hero, visible only on mobile */}
-      <div className="lg:hidden px-4 py-3 bg-white border-b border-gray-200 sticky top-0 z-30 shadow-sm">
-        <div className="flex gap-2 max-w-7xl mx-auto">
+      <div className="sticky top-16 z-30 border-b border-slate-200 bg-white px-4 py-3 shadow-sm lg:hidden">
+        <div className="mx-auto flex max-w-7xl gap-2">
           {landline ? (
-            <a href={phoneLink} className="btn-primary flex-1 text-center text-sm py-2.5">
-              📞 Call now
-            </a>
+            <TrackedContactLink href={phoneLink} kind="call_click" plumberId={plumber.id} area={plumber.area} service={primaryService} className="btn-primary flex-1"><Phone className="h-4 w-4" /> Call</TrackedContactLink>
           ) : (
             <>
-              <a
-                href={waLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-whatsapp flex-1 text-center text-sm py-2.5"
-              >
-                💬 WhatsApp
-              </a>
-              <a href={phoneLink} className="btn-secondary text-sm py-2.5">
-                📞 Call
-              </a>
+              <TrackedContactLink href={waLink} kind="whatsapp_click" plumberId={plumber.id} area={plumber.area} service={primaryService} className="btn-whatsapp flex-1" newWindow><MessageCircle className="h-4 w-4" /> WhatsApp</TrackedContactLink>
+              <TrackedContactLink href={phoneLink} kind="call_click" plumberId={plumber.id} area={plumber.area} service={primaryService} className="btn-secondary"><Phone className="h-4 w-4" /> Call</TrackedContactLink>
             </>
           )}
-          <a href="#book" className="btn-secondary text-sm py-2.5">
-            📅 Book
-          </a>
+          <a href="#book" className="btn-secondary"><CalendarDays className="h-4 w-4" /> Book</a>
         </div>
       </div>
 
-      {/* Claim CTA — only for unclaimed listings, shown early */}
       {!plumber.profile_id && (
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6">
-          <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-xl p-4 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
-            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center text-xl sm:text-2xl shrink-0">
-              🏢
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="font-display text-base sm:text-lg font-bold text-gray-900 mb-0.5">
-                Is this your business?
-              </h3>
-              <p className="text-xs sm:text-sm text-gray-600">
-                Claim this listing to update your profile and get more customers — free.
-              </p>
-            </div>
-            <a
-              href={`/claim/${plumber.slug ?? plumber.id}`}
-              className="btn-primary whitespace-nowrap shrink-0 text-sm"
-            >
-              Claim listing →
-            </a>
+        <section className="mx-auto max-w-7xl px-4 pt-5 sm:px-6">
+          <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-5 sm:flex-row sm:items-center">
+            <Building2 className="h-6 w-6 shrink-0 text-amber-700" />
+            <div className="flex-1"><h2 className="font-display text-lg font-bold text-slate-950">Is this your business?</h2><p className="text-sm text-slate-700">Claim requests are reviewed before profile control is transferred.</p></div>
+            <Link href={`/claim/${plumber.slug ?? plumber.id}`} className="btn-primary">Request ownership review</Link>
           </div>
         </section>
       )}
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-10 pb-20 lg:pb-10 grid lg:grid-cols-[1fr_380px] gap-4 sm:gap-6">
-        <div className="space-y-4 sm:space-y-5 min-w-0">
-          {plumber.about && (
-            <Panel title="About">
-              <p className="text-gray-700 leading-relaxed break-words overflow-wrap-anywhere">
-                {plumber.about}
-              </p>
-            </Panel>
+      <main className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="min-w-0 space-y-5">
+          <section className={`rounded-2xl border p-5 ${verificationTone(state)}`}>
+            <div className="flex items-center gap-2"><StateIcon className="h-5 w-5" /><h2 className="font-display text-xl font-bold">{verificationLabel(state)}</h2></div>
+            <p className="mt-3 text-sm leading-relaxed">{verificationDescription(state)}</p>
+            {stateDate && <p className="mt-2 text-xs font-bold">Last evidence check: {stateDate}</p>}
+            {state === "credential_verified" && plumber.pirb_number && <p className="mt-2 text-sm font-semibold">Recorded PIRB number: {plumber.pirb_number}</p>}
+            <Link href="/trust" className="mt-3 inline-flex items-center gap-1 text-sm font-bold underline">Read the method <ExternalLink className="h-3.5 w-3.5" /></Link>
+          </section>
+
+          {profileAbout ? (
+            <Panel title="About this business"><p className="overflow-wrap-anywhere whitespace-pre-line text-sm leading-relaxed text-slate-700">{profileAbout}</p></Panel>
+          ) : (
+            <Panel title="About this business"><p className="text-sm leading-relaxed text-slate-600">This profile does not yet have a business-supplied description. Use the listed services and trust state, then confirm the job details directly.</p></Panel>
           )}
 
-          {/* Website & Social Links */}
-          {(plumber.website_url || plumber.facebook_url || plumber.instagram_url || plumber.tiktok_url) && (
-            <Panel title="Website & Social Media">
-              <div className="flex flex-wrap gap-3">
-                {plumber.website_url && (
-                  <a
-                    href={plumber.website_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg hover:border-brand hover:bg-brand-light transition-all text-sm font-medium"
-                  >
-                    🌐 Website
-                  </a>
-                )}
-                {plumber.facebook_url && (
-                  <a
-                    href={plumber.facebook_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg hover:border-blue-400 transition-all text-sm font-medium text-blue-700"
-                  >
-                    📘 Facebook
-                  </a>
-                )}
-                {plumber.instagram_url && (
-                  <a
-                    href={plumber.instagram_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-4 py-2.5 bg-pink-50 border border-pink-200 rounded-lg hover:border-pink-400 transition-all text-sm font-medium text-pink-700"
-                  >
-                    📷 Instagram
-                  </a>
-                )}
-                {plumber.tiktok_url && (
-                  <a
-                    href={plumber.tiktok_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg hover:border-gray-400 transition-all text-sm font-medium"
-                  >
-                    🎵 TikTok
-                  </a>
-                )}
-              </div>
-            </Panel>
-          )}
-
-          {/* Accreditations */}
-          {(plumber.pirb_number || plumber.sessa_number || plumber.lpgsa_number) && (
-            <Panel title="Accreditations & Licences">
-              <div className="flex flex-col gap-2">
-                {plumber.pirb_number && (
-                  <div className="flex items-center gap-3 p-3 bg-teal-50 border border-teal-200 rounded-lg">
-                    <span className="text-lg">✓</span>
-                    <div>
-                      <div className="text-sm font-semibold text-teal-800">PIRB Registered</div>
-                      <div className="text-xs text-teal-600">{plumber.pirb_number}</div>
-                    </div>
-                  </div>
-                )}
-                {plumber.sessa_number && (
-                  <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <span className="text-lg">✓</span>
-                    <div>
-                      <div className="text-sm font-semibold text-blue-800">SESSA Registered</div>
-                      <div className="text-xs text-blue-600">{plumber.sessa_number}</div>
-                    </div>
-                  </div>
-                )}
-                {plumber.lpgsa_number && (
-                  <div className="flex items-center gap-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-                    <span className="text-lg">✓</span>
-                    <div>
-                      <div className="text-sm font-semibold text-purple-800">LPGSA Registered</div>
-                      <div className="text-xs text-purple-600">{plumber.lpgsa_number}</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </Panel>
-          )}
-
-          <Panel title="Specialties">
-            <div className="flex flex-wrap gap-2">
-              {(plumber.specialties as string[]).map((s: string) => (
-                <span
-                  key={s}
-                  className="px-3 py-1.5 bg-brand-light text-brand rounded-lg text-sm font-semibold"
-                >
-                  {s}
-                </span>
-              ))}
-            </div>
+          <Panel title="Listed services">
+            {plumber.specialties?.length ? <div className="flex flex-wrap gap-2">{plumber.specialties.map((service: string) => <span key={service} className="rounded-lg bg-blue-50 px-3 py-1.5 text-sm font-bold text-brand">{service}</span>)}</div> : <p className="text-sm text-slate-600">No services have been confirmed on this profile.</p>}
           </Panel>
 
-          {(plumber.certifications as Array<{ id: string; cert_name: string; cert_file_url: string }>)?.length > 0 && (
-            <Panel title="Certifications & Credentials">
-              <div className="flex flex-col gap-2">
-                {(
-                  plumber.certifications as Array<{
-                    id: string;
-                    cert_name: string;
-                    cert_file_url: string;
-                  }>
-                ).map((c) => (
-                  <div
-                    key={c.id}
-                    className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-teal-light text-teal flex items-center justify-center text-lg shrink-0">
-                      📜
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-sm font-semibold text-gray-900">
-                        {c.cert_name}
-                      </div>
-                    </div>
-                    <a
-                      href={c.cert_file_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn-secondary text-xs"
-                    >
-                      View PDF
-                    </a>
-                  </div>
-                ))}
+          {(plumber.pirb_number || plumber.sessa_number || plumber.lpgsa_number || certifications.length) && (
+            <Panel title="Credentials recorded on the profile">
+              <div className="space-y-3">
+                {plumber.pirb_number && <CredentialRow name="PIRB number" value={plumber.pirb_number} checked={state === "credential_verified"} />}
+                {plumber.sessa_number && <CredentialRow name="SESSA number" value={plumber.sessa_number} checked={false} />}
+                {plumber.lpgsa_number && <CredentialRow name="LPGSA number" value={plumber.lpgsa_number} checked={false} />}
+                {certifications.map((credential: { id: string; cert_name: string }) => <CredentialRow key={credential.id} name={credential.cert_name} value="Private evidence supplied" checked={state === "credential_verified"} />)}
               </div>
+              <p className="mt-4 text-xs leading-relaxed text-slate-500">Private certificates are not published as public download links. Ask the business for current proof for your specific job.</p>
             </Panel>
           )}
+
+          {externalLinks.length > 0 && <Panel title="Business links"><div className="flex flex-wrap gap-2">{externalLinks.map((item) => <a key={item.label} href={item.url} target="_blank" rel="noopener noreferrer" className="btn-secondary"><Globe2 className="h-4 w-4" /> {item.label}</a>)}</div></Panel>}
 
           {workPhotos.length > 0 && (
-            <Panel title="Recent Work">
-              <div className="grid grid-cols-3 gap-2">
-                {workPhotos.slice(0, 9).map((p, i) => (
-                  <a
-                    key={i}
-                    href={p.photo_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="aspect-square rounded-lg bg-cover bg-center hover:scale-[1.02] transition-transform"
-                    style={{ backgroundImage: `url(${p.photo_url})` }}
-                  />
-                ))}
-              </div>
+            <Panel title="Work photos">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{workPhotos.map((photo: { id?: string; photo_url: string; caption?: string | null }, index: number) => <a key={photo.id ?? index} href={photo.photo_url} target="_blank" rel="noopener noreferrer" className="group relative aspect-square overflow-hidden rounded-xl bg-slate-100"><Image src={photo.photo_url} alt={photo.caption || `${plumber.trading_name} work example ${index + 1}`} fill sizes="(max-width: 640px) 50vw, 220px" className="object-cover transition-transform group-hover:scale-105" /></a>)}</div>
             </Panel>
           )}
 
-          {/* Google My Business section */}
           {plumber.google_place_id && (
-            <Panel title="Google My Business Reviews">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 p-4 bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200 rounded-xl mb-4">
-                <div className="flex items-center gap-3 sm:gap-5">
-                  <div className="font-display text-3xl sm:text-4xl font-bold text-gray-900 leading-none">
-                    {plumber.google_rating ?? "—"}
-                  </div>
-                  <div>
-                    <div className="text-amber-500 text-base sm:text-lg tracking-wide">★★★★★</div>
-                    <div className="text-xs text-gray-600">
-                      Based on <strong>{plumber.google_review_count ?? 0}</strong> reviews on{" "}
-                      <strong className="text-blue-600">Google</strong>
-                    </div>
-                  </div>
-                </div>
-                <a
-                  href={reviewLink ?? "#"}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-primary text-sm sm:ml-auto"
-                >
-                  Write a Google Review
-                </a>
-              </div>
-
-              <div className="flex flex-col">
-                {(plumber.google_reviews as Array<{
-                  id: string;
-                  reviewer_name: string;
-                  rating: number;
-                  text: string | null;
-                  review_time: string | null;
-                }> ?? []).slice(0, 5).map((r) => (
-                  <div key={r.id} className="py-4 border-b border-gray-100 last:border-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-semibold text-xs">
-                        {r.reviewer_name.split(" ").map(w => w[0]).join("").slice(0, 2)}
-                      </div>
-                      <strong className="text-sm">{r.reviewer_name}</strong>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-semibold">
-                        Google
-                      </span>
-                      {r.review_time && (
-                        <span className="ml-auto text-xs text-gray-500">
-                          {new Date(r.review_time).toLocaleDateString("en-ZA")}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-amber-500 text-xs tracking-wide mb-1">
-                      {"★".repeat(r.rating)}
-                      {"☆".repeat(5 - r.rating)}
-                    </div>
-                    {r.text && <p className="text-sm text-gray-700 leading-relaxed">{r.text}</p>}
-                  </div>
-                ))}
-              </div>
+            <Panel title="Google review summary">
+              <div className="flex flex-wrap items-center gap-4 rounded-xl bg-amber-50 p-4"><Star className="h-6 w-6 fill-amber-400 text-amber-400" /><div><div className="font-display text-2xl font-bold text-slate-950">{plumber.google_rating ?? "—"}</div><div className="text-xs text-slate-600">{plumber.google_review_count ?? 0} reviews shown by Google data</div></div>{googleReviewLink && <a href={googleReviewLink} target="_blank" rel="noopener noreferrer" className="btn-secondary ml-auto">Open Google review form</a>}</div>
+              <div className="mt-3 divide-y divide-slate-100">{googleReviews.slice(0, 5).map((review: { id: string; reviewer_name: string; rating: number; text: string | null; review_time: string | null }) => <ReviewItem key={review.id} name={review.reviewer_name} rating={review.rating} text={review.text} date={review.review_time} source="Google" />)}</div>
             </Panel>
           )}
 
-          <Panel title="Customer Reviews on KZN Plumbers">
-            <p className="text-sm text-gray-500 mb-4">
-              Verified reviews from this platform
-            </p>
+          <Panel title="Reviews submitted through KZN Plumbers">
+            <p className="mb-4 text-xs text-slate-500">These are separate from Google reviews. Read each review and verify details directly.</p>
             <ReviewForm plumberId={plumber.id} />
-            <div className="mt-6">
-              {(plumber.reviews as Array<{
-                id: string;
-                reviewer_name: string;
-                rating: number;
-                comment: string | null;
-                created_at: string;
-              }> ?? []).map((r) => (
-                <div key={r.id} className="py-4 border-b border-gray-100 last:border-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="w-8 h-8 rounded-full bg-brand text-white flex items-center justify-center font-semibold text-xs">
-                      {r.reviewer_name.split(" ").map(w => w[0]).join("").slice(0, 2)}
-                    </div>
-                    <strong className="text-sm">{r.reviewer_name}</strong>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand-light text-brand font-semibold">
-                      Internal
-                    </span>
-                    <span className="ml-auto text-xs text-gray-500">
-                      {new Date(r.created_at).toLocaleDateString("en-ZA")}
-                    </span>
-                  </div>
-                  <div className="text-amber-500 text-xs tracking-wide mb-1">
-                    {"★".repeat(r.rating)}
-                    {"☆".repeat(5 - r.rating)}
-                  </div>
-                  {r.comment && <p className="text-sm text-gray-700 leading-relaxed">{r.comment}</p>}
-                </div>
-              ))}
-            </div>
+            <div className="mt-5 divide-y divide-slate-100">{internalReviews.map((review: { id: string; reviewer_name: string; rating: number; comment: string | null; created_at: string }) => <ReviewItem key={review.id} name={review.reviewer_name} rating={review.rating} text={review.comment} date={review.created_at} source="KZN Plumbers" />)}</div>
           </Panel>
         </div>
 
-        {/* Sidebar */}
         <aside className="space-y-5">
-          <div id="book" className="panel lg:sticky lg:top-20">
-            {/* CTA buttons — hidden on mobile (shown in sticky bar instead) */}
-            <div className="hidden lg:flex gap-2 mb-4">
+          <section id="book" className="panel lg:sticky lg:top-24">
+            <div className="mb-4 hidden gap-2 lg:flex">
               {landline ? (
-                <a href={phoneLink} className="btn-primary flex-1">
-                  📞 Call now
-                </a>
+                <TrackedContactLink href={phoneLink} kind="call_click" plumberId={plumber.id} area={plumber.area} service={primaryService} className="btn-primary flex-1"><Phone className="h-4 w-4" /> Call</TrackedContactLink>
               ) : (
                 <>
-                  <a
-                    href={waLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-whatsapp flex-1"
-                  >
-                    💬 WhatsApp
-                  </a>
-                  <a href={phoneLink} className="btn-secondary">
-                    📞 Call
-                  </a>
+                  <TrackedContactLink href={waLink} kind="whatsapp_click" plumberId={plumber.id} area={plumber.area} service={primaryService} className="btn-whatsapp flex-1" newWindow><MessageCircle className="h-4 w-4" /> WhatsApp</TrackedContactLink>
+                  <TrackedContactLink href={phoneLink} kind="call_click" plumberId={plumber.id} area={plumber.area} service={primaryService} className="btn-secondary"><Phone className="h-4 w-4" /> Call</TrackedContactLink>
                 </>
               )}
             </div>
-
-            <h3 className="font-display text-lg font-bold mb-1">Book an Appointment</h3>
-            <p className="text-xs text-gray-500 mb-4">
-              Saves to bookings · sends WhatsApp notification
-            </p>
-
-            <BookingForm
-              plumberId={plumber.id}
-              plumberWhatsApp={plumber.whatsapp_number}
-              plumberName={plumber.trading_name}
-            />
-
-            {plumber.google_calendar_url && (
-              <div className="mt-4 pt-4 border-t border-gray-100">
-                <div className="text-sm font-semibold mb-2">Or use Google Calendar</div>
-                <a
-                  href={plumber.google_calendar_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-secondary w-full"
-                >
-                  📅 Check Live Availability
-                </a>
-              </div>
-            )}
-          </div>
-
-          {reviewLink && (
-            <ReviewLinkPanel reviewUrl={reviewLink} plumberName={plumber.trading_name} />
-          )}
+            <h2 className="font-display text-xl font-bold text-slate-950">Send a booking request</h2>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">Your request is stored for this business and a WhatsApp chat opens for direct follow-up.</p>
+            <div className="mt-4"><BookingForm plumberId={plumber.id} plumberWhatsApp={plumber.whatsapp_number} plumberName={plumber.trading_name} /></div>
+            {safeUrl(plumber.google_calendar_url) && <a href={safeUrl(plumber.google_calendar_url)!} target="_blank" rel="noopener noreferrer" className="btn-secondary mt-4 w-full"><CalendarDays className="h-4 w-4" /> Check calendar</a>}
+          </section>
+          {googleReviewLink && <ReviewLinkPanel reviewUrl={googleReviewLink} plumberName={plumber.trading_name} />}
         </aside>
-      </div>
+      </main>
 
-      {relatedPlumbers.length > 0 && (
-        <section className="max-w-6xl mx-auto px-6 py-12 border-t border-gray-200">
-          <div className="flex items-end justify-between mb-6">
-            <div>
-              <h2 className="font-display text-2xl md:text-3xl font-extrabold text-gray-900">
-                More verified plumbers in {plumber.area}
-              </h2>
-              <p className="text-gray-600 text-sm mt-1">
-                Compare and message multiple plumbers — most respond within an hour.
-              </p>
-            </div>
-            <a
-              href={`/?area=${encodeURIComponent(plumber.area)}`}
-              className="text-sm font-semibold text-brand hover:underline whitespace-nowrap hidden sm:inline"
-            >
-              See all →
-            </a>
+      {related.length > 0 && (
+        <section className="border-t border-slate-200 bg-white px-4 py-12 sm:px-6">
+          <div className="mx-auto max-w-7xl">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-brand">Compare alternatives</p><h2 className="mt-2 font-display text-3xl font-bold text-slate-950">More records in {plumber.area}</h2></div>{region && <Link href={`/plumbers/${region.slug}`} className="text-sm font-bold text-brand hover:underline">View the regional collection</Link>}</div>
+            <div className="mt-7 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{related.map((item, index) => <PlumberCard key={item.id} plumber={item} sourcePage="related_profiles" rankPosition={index + 1} />)}</div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {(relatedPlumbers as Array<{
-              id: string;
-              slug: string | null;
-              trading_name: string;
-              area: string;
-              specialties: string[];
-              google_rating: number | null;
-              google_review_count: number | null;
-              is_certified: boolean;
-              is_emergency: boolean;
-              whatsapp_number: string;
-            }>).map((p) => {
-              const stars = p.google_rating
-                ? "★".repeat(Math.round(p.google_rating)) +
-                  "☆".repeat(5 - Math.round(p.google_rating))
-                : "—";
-              return (
-                <a
-                  key={p.id}
-                  href={`/plumber/${p.slug ?? p.id}`}
-                  className="block bg-white border border-gray-200 rounded-xl p-4 hover:border-brand hover:shadow-md transition-all"
-                >
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-lg bg-brand text-white flex items-center justify-center font-bold text-sm shrink-0">
-                      {initials(p.trading_name)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="font-display font-bold text-gray-900 truncate text-sm">
-                        {p.trading_name}
-                      </div>
-                      <div className="text-xs text-gray-500 truncate">
-                        📍 {p.area}
-                      </div>
-                    </div>
-                  </div>
-                  {(p.google_rating || p.is_certified || p.is_emergency) && (
-                    <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                      {p.google_rating && (
-                        <span className="text-xs">
-                          <span className="text-amber-500">{stars}</span>
-                          <span className="text-gray-600 ml-1">
-                            {p.google_rating.toFixed(1)} ({p.google_review_count})
-                          </span>
-                        </span>
-                      )}
-                      {p.is_certified && (
-                        <span className="text-[10px] bg-teal-100 text-teal-800 px-1.5 py-0.5 rounded font-semibold uppercase">
-                          ✓ PIRB
-                        </span>
-                      )}
-                      {p.is_emergency && (
-                        <span className="text-[10px] bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded font-semibold uppercase">
-                          24/7
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  <div className="text-xs text-gray-600 line-clamp-1">
-                    {(p.specialties ?? []).slice(0, 3).join(" • ")}
-                  </div>
-                </a>
-              );
-            })}
-          </div>
-          <a
-            href={`/?area=${encodeURIComponent(plumber.area)}`}
-            className="inline-block sm:hidden mt-5 text-sm font-semibold text-brand hover:underline"
-          >
-            See all plumbers in {plumber.area} →
-          </a>
         </section>
       )}
     </>
   );
 }
 
-function Panel({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="panel">
-      <h2 className="font-display text-lg sm:text-xl font-bold mb-3 sm:mb-4 text-gray-900">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
+function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+  return <section className="panel"><h2 className="font-display text-xl font-bold text-slate-950">{title}</h2><div className="mt-4">{children}</div></section>;
 }
 
-function availabilityClass(status: string) {
-  return {
-    available: "bg-green-100 text-green-800",
-    busy: "bg-amber-light text-amber",
-    unavailable: "bg-red-100 text-red-800",
-  }[status] ?? "bg-gray-100 text-gray-700";
+function CredentialRow({ name, value, checked }: { name: string; value: string; checked: boolean }) {
+  return <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4"><FileCheck2 className={`mt-0.5 h-5 w-5 shrink-0 ${checked ? "text-emerald-600" : "text-slate-400"}`} /><div><div className="text-sm font-bold text-slate-950">{name}</div><div className="mt-0.5 text-xs text-slate-600">{value}</div><div className="mt-1 text-[11px] font-semibold text-slate-500">{checked ? "Included in the current credential check" : "Recorded, not independently confirmed by this label"}</div></div></div>;
+}
+
+function ReviewItem({ name, rating, text, date, source }: { name: string; rating: number; text: string | null; date: string | null; source: string }) {
+  return <article className="py-4"><div className="flex flex-wrap items-center gap-2"><strong className="text-sm text-slate-950">{name}</strong><span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">{source}</span>{date && <time className="ml-auto text-xs text-slate-500" dateTime={date}>{new Date(date).toLocaleDateString("en-ZA")}</time>}</div><div className="mt-1 text-sm text-amber-500" aria-label={`${rating} out of 5 stars`}>{"★".repeat(Math.max(0, Math.min(5, rating)))}{"☆".repeat(Math.max(0, 5 - Math.min(5, rating)))}</div>{text && <p className="mt-2 text-sm leading-relaxed text-slate-700">{text}</p>}</article>;
+}
+
+function safeUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value.startsWith("http") ? value : `https://${value}`);
+    return ["http:", "https:"].includes(url.protocol) ? url.toString() : null;
+  } catch {
+    return null;
+  }
 }

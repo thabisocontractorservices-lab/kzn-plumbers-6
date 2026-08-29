@@ -1,11 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/utils/supabase/server";
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 /**
  * GET /api/admin/users
@@ -13,8 +8,9 @@ const supabaseAdmin = createClient(
  * Returns all profiles with their plumber data (bypasses RLS).
  * Only accessible to admin users.
  */
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
     // Verify caller is admin
     const supabase = await createSupabaseServerClient();
     const {

@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Terms of Service — KZN Plumbers Directory",
-  description: "Terms and conditions for using kznplumbers.co.za — the verified plumber directory for KwaZulu-Natal.",
+  description: "Terms and conditions for homeowners, plumbing businesses and other users of KZN Plumbers Directory.",
+  alternates: { canonical: "/terms" },
 };
 
 export default function TermsPage() {
@@ -11,7 +12,7 @@ export default function TermsPage() {
       <section className="bg-gradient-to-br from-brand to-brand-dark text-white py-10 sm:py-14 px-4 sm:px-6">
         <div className="max-w-3xl mx-auto text-center">
           <h1 className="font-display text-2xl sm:text-4xl font-extrabold mb-2">Terms of Service</h1>
-          <p className="text-sm opacity-80">Last updated: 1 August 2026</p>
+          <p className="text-sm opacity-80">Last updated: 16 August 2026</p>
         </div>
       </section>
 
@@ -50,8 +51,10 @@ export default function TermsPage() {
         <h2>4. Plumber Listings</h2>
         <h3>Verification</h3>
         <p>
-          All plumber listings are subject to verification by our admin team before going live on the directory. We
-          reserve the right to reject, suspend, or remove any listing at our sole discretion.
+          Published records may be labelled as a credential-verified profile, a business-claimed profile, or an unclaimed
+          directory record. Each label has a limited meaning explained on our Trust page and is not a guarantee of
+          workmanship, price, insurance, availability, or suitability for a particular job. We reserve the right to reject,
+          suspend, correct, downgrade, or remove a listing.
         </p>
         <h3>Accuracy</h3>
         <p>

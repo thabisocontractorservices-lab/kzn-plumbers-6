@@ -101,12 +101,14 @@ export function ProfileEditor({
       <div>
         <label className="text-xs font-semibold mb-1 block">About</label>
         <textarea
-          rows={4}
+          rows={5}
+          maxLength={1500}
           value={form.about ?? ""}
           onChange={(e) => setForm({ ...form, about: e.target.value })}
           className="input resize-none"
-          placeholder="Tell potential customers about your experience, your team, and what makes you different..."
+          placeholder="Describe real services, areas, equipment, languages, response arrangements, warranties, or project experience. Avoid generic claims."
         />
+        <p className="mt-1 text-xs leading-relaxed text-slate-500">Use facts a homeowner can verify. Do not add invented prices, credentials, availability, guarantees, or AI-generated filler.</p>
       </div>
       <div>
         <label className="text-xs font-semibold mb-1 block">Specialties</label>

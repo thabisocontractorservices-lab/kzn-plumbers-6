@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "@/utils/supabase/server";
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 /**
  * GET /api/admin/plumber-detail?id=xxx
@@ -16,6 +11,7 @@ const supabaseAdmin = createClient(
  */
 export async function GET(req: NextRequest) {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
     const supabase = await createSupabaseServerClient();
     const {
       data: { user },
@@ -52,7 +48,8 @@ export async function GET(req: NextRequest) {
     }
 
     // Fetch related data in parallel
-    const [photosRes, profilePhotoRes, certsRes, bookingsRes] = await Promise.all([
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const [photosRes, profilePhotoRes, certsRes, bookingsRes, leadEventsRes] = await Promise.all([
       supabaseAdmin
         .from("photos")
         .select("id", { count: "exact", head: true })
@@ -72,7 +69,17 @@ export async function GET(req: NextRequest) {
         .eq("plumber_id", plumberId)
         .order("created_at", { ascending: false })
         .limit(8),
+      supabaseAdmin
+        .from("lead_events")
+        .select("event_name")
+        .eq("plumber_id", plumberId)
+        .gte("created_at", thirtyDaysAgo),
     ]);
+
+    const leadCounts = { whatsapp_click: 0, call_click: 0, booking_complete: 0 };
+    for (const event of leadEventsRes.data ?? []) {
+      if (event.event_name in leadCounts) leadCounts[event.event_name as keyof typeof leadCounts] += 1;
+    }
 
     return NextResponse.json({
       plumber: {
@@ -82,6 +89,7 @@ export async function GET(req: NextRequest) {
         has_certs: (certsRes.count ?? 0) > 0,
       },
       bookings: bookingsRes.data ?? [],
+      lead_counts: leadCounts,
     });
   } catch (err) {
     console.error("[admin/plumber-detail] Error:", err);

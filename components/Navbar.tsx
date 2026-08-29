@@ -1,108 +1,29 @@
+import Image from "next/image";
 import Link from "next/link";
-import { createSupabaseServerClient } from "@/utils/supabase/server";
-import { MobileMenu } from "./MobileMenu";
+import { AuthNav } from "@/components/AuthNav";
+import { MobileMenu } from "@/components/MobileMenu";
 
-export async function Navbar() {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  let role: string | null = null;
-  if (user) {
-    const { data } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single<{ role: string }>();
-    role = data?.role ?? null;
-  }
-
+export function Navbar() {
   return (
-    <nav className="bg-brand sticky top-0 z-40 shadow-md relative">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
-        <Link href="/" className="flex items-center min-w-0">
-          <img
-            src="/logo.svg"
-            alt="KZN Plumbers"
-            className="h-8 sm:h-9 w-auto"
-          />
+    <header className="sticky top-0 z-50 border-b border-white/10 bg-brand shadow-md">
+      <nav className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6" aria-label="Primary navigation">
+        <Link href="/" className="flex min-w-0 items-center" aria-label="KZN Plumbers Directory home">
+          <Image src="/logo.svg" alt="" width={180} height={36} priority className="h-9 w-auto brightness-0 invert" />
         </Link>
 
-        {/* Desktop nav links */}
-        <div className="hidden md:flex gap-1 items-center">
-          <Link
-            href="/"
-            className="text-white/85 hover:text-white px-3 py-1.5 rounded-md hover:bg-white/10 text-sm font-semibold"
-          >
-            Find a Plumber
-          </Link>
-          <Link
-            href="/blog"
-            className="text-white/85 hover:text-white px-3 py-1.5 rounded-md hover:bg-white/10 text-sm font-semibold"
-          >
-            Blog
-          </Link>
-          {!user && (
-            <Link
-              href="/register"
-              className="text-white/85 hover:text-white px-3 py-1.5 rounded-md hover:bg-white/10 text-sm font-semibold"
-            >
-              List Your Business
-            </Link>
-          )}
-          {user && (
-            <Link
-              href="/dashboard"
-              className="text-white/85 hover:text-white px-3 py-1.5 rounded-md hover:bg-white/10 text-sm font-semibold"
-            >
-              Dashboard
-            </Link>
-          )}
-          {role === "admin" && (
-            <Link
-              href="/admin"
-              className="text-white/85 hover:text-white px-3 py-1.5 rounded-md hover:bg-white/10 text-sm font-semibold"
-            >
-              Admin
-            </Link>
-          )}
+        <div className="hidden items-center gap-1 md:flex">
+          <Link href="/#directory-results" className="rounded-lg px-3 py-2 text-sm font-bold text-white/85 hover:bg-white/10 hover:text-white">Find a plumber</Link>
+          <Link href="/#regions" className="rounded-lg px-3 py-2 text-sm font-bold text-white/85 hover:bg-white/10 hover:text-white">Areas</Link>
+          <Link href="/#services" className="rounded-lg px-3 py-2 text-sm font-bold text-white/85 hover:bg-white/10 hover:text-white">Services</Link>
+          <Link href="/trust" className="rounded-lg px-3 py-2 text-sm font-bold text-white/85 hover:bg-white/10 hover:text-white">How we verify</Link>
+          <Link href="/blog" className="rounded-lg px-3 py-2 text-sm font-bold text-white/85 hover:bg-white/10 hover:text-white">Guides</Link>
         </div>
 
-        {/* Desktop auth buttons + Mobile hamburger */}
-        <div className="flex gap-1.5 sm:gap-2 items-center shrink-0">
-          {user ? (
-            <>
-              <span className="hidden md:inline text-white/70 text-xs">
-                {user.email}
-              </span>
-              <form action="/auth/signout" method="post" className="hidden md:block">
-                <button className="text-white/90 border border-white/40 hover:bg-white/15 px-2.5 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-semibold">
-                  Logout
-                </button>
-              </form>
-            </>
-          ) : (
-            <div className="hidden md:flex gap-1.5 sm:gap-2">
-              <Link
-                href="/login"
-                className="text-white/90 border border-white/40 hover:bg-white/15 px-2.5 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-semibold"
-              >
-                Login
-              </Link>
-              <Link
-                href="/register"
-                className="bg-white text-brand hover:bg-brand-light px-2.5 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-semibold whitespace-nowrap"
-              >
-                List Free
-              </Link>
-            </div>
-          )}
-
-          {/* Mobile hamburger menu */}
-          <MobileMenu isLoggedIn={!!user} isAdmin={role === "admin"} />
+        <div className="flex items-center gap-2">
+          <AuthNav />
+          <MobileMenu />
         </div>
-      </div>
-    </nav>
+      </nav>
+    </header>
   );
 }

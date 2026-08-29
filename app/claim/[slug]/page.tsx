@@ -1,5 +1,4 @@
-import type { Metadata } from "next";
-import { supabase } from "@/src/supabaseClient";
+import { getPublicSupabase } from "@/lib/supabase/public";
 import { notFound } from "next/navigation";
 import { initials, formatRand } from "@/lib/utils";
 import { ClaimFlow } from "@/components/ClaimFlow";
@@ -12,6 +11,8 @@ export default async function ClaimPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+  const supabase = getPublicSupabase();
+  if (!supabase) notFound();
 
   const { data: plumber } = await supabase
     .from("plumbers")
@@ -39,7 +40,7 @@ export default async function ClaimPage({
             </div>
           </div>
           <h1 className="font-display text-2xl sm:text-4xl font-bold mb-2">
-            {isClaimed ? "Already Claimed" : "Is this your business?"}
+            {isClaimed ? "Already claimed" : "Request ownership review"}
           </h1>
           <p className="text-base sm:text-lg opacity-90 mb-1">
             {plumber.trading_name}
@@ -47,7 +48,6 @@ export default async function ClaimPage({
           <p className="text-sm opacity-75">
             📍 {plumber.area}
             {plumber.hourly_rate ? ` · ${formatRand(plumber.hourly_rate)}/hr` : ""}
-            {plumber.pirb_number ? ` · ${plumber.pirb_number}` : ""}
           </p>
         </div>
       </section>
@@ -104,6 +104,8 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+  const supabase = getPublicSupabase();
+  if (!supabase) return { title: "Claim Your Listing | KZN Plumbers", robots: { index: false, follow: false } };
   const { data: plumber } = await supabase
     .from("plumbers")
     .select("trading_name, area")

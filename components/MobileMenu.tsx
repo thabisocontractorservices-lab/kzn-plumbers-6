@@ -1,18 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Menu, X } from "lucide-react";
+import { supabase } from "@/src/supabaseClient";
 
-export function MobileMenu({
-  isLoggedIn,
-  isAdmin,
-}: {
-  isLoggedIn: boolean;
-  isAdmin: boolean;
-}) {
+export function MobileMenu() {
   const [open, setOpen] = useState(false);
+  const [auth, setAuth] = useState({ loggedIn: false, admin: false });
   const pathname = usePathname();
+
+  useEffect(() => {
+    let mounted = true;
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!mounted || !session?.user) return;
+      const { data: profile } = await supabase.from("profiles").select("role").eq("id", session.user.id).maybeSingle();
+      if (mounted) setAuth({ loggedIn: true, admin: profile?.role === "admin" });
+    });
+    return () => { mounted = false; };
+  }, []);
 
   function close() {
     setOpen(false);
@@ -20,124 +27,38 @@ export function MobileMenu({
 
   return (
     <div className="md:hidden">
-      {/* Hamburger button */}
       <button
-        onClick={() => setOpen(!open)}
-        className="text-white p-2 -mr-2 rounded-lg hover:bg-white/10 transition-colors"
-        aria-label="Toggle menu"
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="rounded-lg p-2 text-white hover:bg-white/10"
+        aria-label={open ? "Close menu" : "Open menu"}
+        aria-expanded={open}
       >
-        {open ? (
-          // X icon
-          <svg
-            className="w-6 h-6"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
-        ) : (
-          // Hamburger icon
-          <svg
-            className="w-6 h-6"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 6h16M4 12h16M4 18h16"
-            />
-          </svg>
-        )}
+        {open ? <X className="h-6 w-6" aria-hidden="true" /> : <Menu className="h-6 w-6" aria-hidden="true" />}
       </button>
 
-      {/* Slide-down menu */}
       {open && (
         <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/30 z-40"
-            onClick={close}
-          />
-
-          {/* Menu panel */}
-          <div className="absolute top-full left-0 right-0 bg-brand border-t border-white/10 shadow-xl z-50 animate-slideDown">
-            <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col gap-1">
-              <MobileLink
-                href="/"
-                label="🔍 Find a Plumber"
-                active={pathname === "/"}
-                onClick={close}
-              />
-              <MobileLink
-                href="/blog"
-                label="📝 Blog"
-                active={pathname.startsWith("/blog")}
-                onClick={close}
-              />
-
-              {!isLoggedIn && (
-                <MobileLink
-                  href="/register"
-                  label="📋 List Your Business"
-                  active={pathname === "/register"}
-                  onClick={close}
-                />
-              )}
-
-              {isLoggedIn && (
-                <MobileLink
-                  href="/dashboard"
-                  label="📊 Dashboard"
-                  active={pathname.startsWith("/dashboard")}
-                  onClick={close}
-                />
-              )}
-
-              {isAdmin && (
-                <MobileLink
-                  href="/admin"
-                  label="⚙️ Admin"
-                  active={pathname === "/admin"}
-                  onClick={close}
-                />
-              )}
-
-              {/* Divider + auth actions */}
-              <div className="border-t border-white/15 my-1.5" />
-
-              {isLoggedIn ? (
-                <form action="/auth/signout" method="post">
-                  <button
-                    onClick={close}
-                    className="w-full text-left text-white/80 hover:text-white hover:bg-white/10 px-4 py-3 rounded-lg text-sm font-medium"
-                  >
-                    🚪 Logout
-                  </button>
-                </form>
+          <button type="button" aria-label="Close menu" className="fixed inset-0 z-40 bg-black/35" onClick={close} />
+          <div className="absolute left-0 right-0 top-full z-50 border-t border-white/10 bg-brand shadow-xl">
+            <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-4">
+              <MobileLink href="/" label="Find a plumber" active={pathname === "/"} onClick={close} />
+              <MobileLink href="/#regions" label="Browse by area" active={false} onClick={close} />
+              <MobileLink href="/#services" label="Browse by service" active={false} onClick={close} />
+              <MobileLink href="/trust" label="How we verify" active={pathname === "/trust"} onClick={close} />
+              <MobileLink href="/help" label="Help centre" active={pathname === "/help"} onClick={close} />
+              <MobileLink href="/blog" label="Guides" active={pathname.startsWith("/blog")} onClick={close} />
+              <div className="my-2 border-t border-white/15" />
+              {auth.admin && <MobileLink href="/admin" label="Admin" active={pathname.startsWith("/admin")} onClick={close} />}
+              {auth.loggedIn ? (
+                <>
+                  <MobileLink href="/dashboard" label="Dashboard" active={pathname.startsWith("/dashboard")} onClick={close} highlight />
+                  <form action="/auth/signout" method="post"><button onClick={close} className="w-full rounded-lg px-4 py-3 text-left text-sm font-semibold text-white/80 hover:bg-white/10 hover:text-white">Sign out</button></form>
+                </>
               ) : (
                 <>
-                  <MobileLink
-                    href="/login"
-                    label="🔑 Login"
-                    active={pathname === "/login"}
-                    onClick={close}
-                  />
-                  <MobileLink
-                    href="/register"
-                    label="✨ Register Free"
-                    active={pathname === "/register"}
-                    onClick={close}
-                    highlight
-                  />
+                  <MobileLink href="/login" label="Sign in" active={pathname === "/login"} onClick={close} />
+                  <MobileLink href="/register" label="List a business" active={pathname === "/register"} onClick={close} highlight />
                 </>
               )}
             </div>
@@ -148,29 +69,17 @@ export function MobileMenu({
   );
 }
 
-function MobileLink({
-  href,
-  label,
-  active,
-  onClick,
-  highlight,
-}: {
-  href: string;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  highlight?: boolean;
-}) {
+function MobileLink({ href, label, active, onClick, highlight = false }: { href: string; label: string; active: boolean; onClick: () => void; highlight?: boolean }) {
   return (
     <Link
       href={href}
       onClick={onClick}
-      className={`px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+      className={`rounded-lg px-4 py-3 text-sm font-semibold transition-colors ${
         highlight
-          ? "bg-white text-brand font-semibold"
+          ? "bg-white text-brand"
           : active
             ? "bg-white/15 text-white"
-            : "text-white/80 hover:text-white hover:bg-white/10"
+            : "text-white/80 hover:bg-white/10 hover:text-white"
       }`}
     >
       {label}

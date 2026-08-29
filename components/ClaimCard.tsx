@@ -28,46 +28,50 @@ export type Claim = {
 export function ClaimCard({ claim }: { claim: Claim }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const [decision, setDecision] = useState<"approved" | "rejected" | null>(
-    null,
-  );
+  const [decision, setDecision] = useState<"approved" | "rejected" | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleClaim(approve: boolean) {
     setBusy(true);
+    setError(null);
     try {
       if (approve) {
-        // 1. Update claim status
-        await supabase
-          .from("claims")
-          .update({
-            status: "approved",
-            resolved_at: new Date().toISOString(),
-          })
-          .eq("id", claim.id);
-
-        // 2. Link plumber to claimant profile
-        await supabase
-          .from("plumbers")
-          .update({ profile_id: claim.claimant_id })
-          .eq("id", claim.plumber_id);
-
+        let result = await supabase.rpc("approve_plumber_claim", {
+          p_claim_id: claim.id,
+          p_admin_notes: null,
+        });
+        if (result.error && /function|schema cache/i.test(result.error.message)) {
+          const plumberUpdate = await supabase
+            .from("plumbers")
+            .update({
+              profile_id: claim.claimant_id,
+              verification_state: "business_claimed",
+              last_checked_at: new Date().toISOString(),
+            })
+            .eq("id", claim.plumber_id)
+            .is("profile_id", null);
+          if (plumberUpdate.error && /column|schema cache/i.test(plumberUpdate.error.message)) {
+            result = await supabase.from("plumbers").update({ profile_id: claim.claimant_id }).eq("id", claim.plumber_id).is("profile_id", null);
+          } else {
+            result = plumberUpdate;
+          }
+          if (!result.error) {
+            result = await supabase.from("claims").update({ status: "approved", resolved_at: new Date().toISOString() }).eq("id", claim.id);
+          }
+        }
+        if (result.error) throw result.error;
         setDecision("approved");
       } else {
-        await supabase
-          .from("claims")
-          .update({
-            status: "rejected",
-            resolved_at: new Date().toISOString(),
-          })
-          .eq("id", claim.id);
-
+        const result = await supabase.from("claims").update({ status: "rejected", resolved_at: new Date().toISOString() }).eq("id", claim.id);
+        if (result.error) throw result.error;
         setDecision("rejected");
       }
     } catch (err) {
-      console.error("Claim action error:", err);
+      setError(err instanceof Error ? err.message : "Claim action failed");
+    } finally {
+      setBusy(false);
+      window.setTimeout(() => router.refresh(), 600);
     }
-    setBusy(false);
-    setTimeout(() => router.refresh(), 600);
   }
 
   if (decision) {
@@ -106,11 +110,7 @@ export function ClaimCard({ claim }: { claim: Claim }) {
             {new Date(claim.created_at).toLocaleDateString("en-ZA")}
           </div>
         </div>
-        {claim.status === "auto_approved" && (
-          <span className="text-[10px] bg-green-100 text-green-800 px-2 py-1 rounded-full font-semibold self-start">
-            Auto ✓
-          </span>
-        )}
+
       </div>
 
       <div className="text-sm text-gray-600 space-y-1 mb-4">
@@ -132,6 +132,8 @@ export function ClaimCard({ claim }: { claim: Claim }) {
           {claim.plumber?.whatsapp_number ?? "—"}
         </div>
       </div>
+
+      {error && <p role="alert" className="mb-3 rounded-lg bg-red-50 p-3 text-xs text-red-800">{error}</p>}
 
       {claim.status === "pending" && (
         <div className="grid grid-cols-3 gap-1.5">

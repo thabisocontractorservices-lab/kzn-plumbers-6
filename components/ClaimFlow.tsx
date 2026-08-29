@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/src/supabaseClient";
+import { trackEvent } from "@/lib/analytics";
 
 type Step = "auth" | "verify" | "success" | "pending";
 
@@ -133,11 +134,12 @@ export function ClaimFlow({
 
       if (!res.ok) throw new Error(data.error ?? "Claim failed");
 
-      if (data.status === "auto_approved") {
-        setStep("success");
-      } else {
-        setStep("pending");
-      }
+      trackEvent("claim_complete", {
+        plumber_id: plumberId,
+        area,
+        verification_state: "ownership_review_pending",
+      });
+      setStep("pending");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Claim failed";
       setError(msg);
@@ -159,7 +161,6 @@ export function ClaimFlow({
   // Check session on mount
   useEffect(() => {
     checkExistingSession();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -279,10 +280,9 @@ export function ClaimFlow({
             Verify ownership
           </h2>
           <p className="text-sm text-gray-600 mb-6">
-            Enter the phone number listed for{" "}
-            <strong>{tradingName}</strong> to verify you own this
-            business. The number on file ends in{" "}
-            <strong>{maskedPhone}</strong>.
+            Enter the business phone number for <strong>{tradingName}</strong>.
+            The public number on file ends in <strong>{maskedPhone}</strong>.
+            A phone match helps the review but does not transfer ownership automatically.
           </p>
 
           <form onSubmit={handleVerify} className="space-y-4">
@@ -296,8 +296,7 @@ export function ClaimFlow({
             />
 
             <p className="text-xs text-gray-500">
-              💡 If the number doesn&apos;t match, your claim will be sent to our
-              team for manual review.
+              Every ownership request is reviewed. We may ask for company, domain, email or registration evidence.
             </p>
 
             {error && (
@@ -311,7 +310,7 @@ export function ClaimFlow({
               disabled={loading}
               className="btn-primary w-full"
             >
-              {loading ? "Verifying…" : "Verify & claim listing"}
+              {loading ? "Submitting…" : "Submit ownership request"}
             </button>
           </form>
         </>
@@ -351,9 +350,9 @@ export function ClaimFlow({
             Claim submitted for review
           </h2>
           <p className="text-gray-600 mb-6">
-            The phone number didn&apos;t match our records, so our team will
-            review your claim for <strong>{tradingName}</strong>. This usually
-            takes 1–2 business days. We&apos;ll email you once it&apos;s approved.
+            We&apos;ll review the ownership request for <strong>{tradingName}</strong>
+            before transferring profile access. We may email you for supporting
+            evidence and will notify you when the review is complete.
           </p>
           <a href="/" className="btn-primary">
             Back to directory

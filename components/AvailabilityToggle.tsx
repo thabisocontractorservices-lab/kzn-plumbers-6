@@ -14,20 +14,40 @@ type Status = (typeof STATES)[number]["key"];
 export function AvailabilityToggle({
   plumberId,
   initial,
+  initialConfirmed = false,
 }: {
   plumberId: string;
   initial: Status;
+  initialConfirmed?: boolean;
 }) {
   const [status, setStatus] = useState<Status>(initial);
+  const [confirmed, setConfirmed] = useState(initialConfirmed);
+  const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   function set(s: Status) {
+    const previous = status;
+    const previousConfirmed = confirmed;
     setStatus(s);
+    setConfirmed(s === "available");
+    setError(null);
     startTransition(async () => {
-      await supabase
+      let result = await supabase
         .from("plumbers")
-        .update({ availability_status: s })
+        .update({
+          availability_status: s,
+          accepts_new_work: s === "available",
+          last_checked_at: new Date().toISOString(),
+        })
         .eq("id", plumberId);
+      if (result.error && /column|schema cache/i.test(result.error.message)) {
+        result = await supabase.from("plumbers").update({ availability_status: s }).eq("id", plumberId);
+      }
+      if (result.error) {
+        setStatus(previous);
+        setConfirmed(previousConfirmed);
+        setError("Status could not be updated.");
+      }
     });
   }
 
@@ -50,6 +70,12 @@ export function AvailabilityToggle({
           </button>
         ))}
       </div>
+      <p className={`mt-1.5 text-[11px] ${status === "available" && !confirmed ? "font-semibold text-amber-700" : "text-gray-500"}`}>
+        {status === "available" && !confirmed
+          ? "Click Available to confirm that you are taking new work."
+          : "Availability is time-sensitive. Update it whenever your workload changes."}
+      </p>
+      {error && <p role="alert" className="mt-1 text-xs text-red-700">{error}</p>}
     </div>
   );
 }

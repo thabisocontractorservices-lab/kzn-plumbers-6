@@ -1,183 +1,102 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { notifyNewClaim } from "@/lib/email";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { SITE_URL } from "@/lib/site";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+const Schema = z.object({
+  plumber_id: z.string().uuid(),
+  phone: z.string().trim().min(7).max(30),
+});
 
-/**
- * POST /api/claim
- * Body: { plumber_id: string, phone: string }
- * Auth: Bearer token (Supabase access token)
- *
- * If the normalised phone matches the plumber's whatsapp_number:
- *   → auto-approve (set profile_id, mark claim auto_approved)
- * Otherwise:
- *   → create pending claim for admin review
- */
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    // 1. Authenticate the user
-    const authHeader = req.headers.get("authorization");
+    const origin = request.headers.get("origin");
+    if (origin && process.env.NODE_ENV === "production") {
+      const originHost = new URL(origin).host;
+      const requestHost = request.headers.get("host");
+      if (originHost !== requestHost && originHost !== new URL(SITE_URL).host) {
+        return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
+      }
+    }
+    if (Number(request.headers.get("content-length") || 0) > 4096) {
+      return NextResponse.json({ error: "Ownership request is too large" }, { status: 413 });
+    }
+
+    const authHeader = request.headers.get("authorization");
     if (!authHeader?.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const token = authHeader.replace("Bearer ", "");
-    const {
-      data: { user },
-      error: authError,
-    } = await supabaseAdmin.auth.getUser(token);
-
-    if (authError || !user) {
-      return NextResponse.json({ error: "Invalid session" }, { status: 401 });
+      return NextResponse.json({ error: "Sign in before requesting ownership" }, { status: 401 });
     }
 
-    // 2. Parse body
-    const body = await req.json();
-    const { plumber_id, phone } = body;
+    const admin = getSupabaseAdmin();
+    const token = authHeader.slice(7);
+    const { data: { user }, error: authError } = await admin.auth.getUser(token);
+    if (authError || !user) return NextResponse.json({ error: "Invalid session" }, { status: 401 });
 
-    if (!plumber_id || !phone) {
-      return NextResponse.json(
-        { error: "plumber_id and phone are required" },
-        { status: 400 },
-      );
-    }
+    const parsed = Schema.safeParse(await request.json());
+    if (!parsed.success) return NextResponse.json({ error: "Check the claim details" }, { status: 400 });
 
-    // 3. Fetch the plumber
-    const { data: plumber, error: plumberError } = await supabaseAdmin
+    const { data: plumber } = await admin
       .from("plumbers")
       .select("id, profile_id, whatsapp_number, trading_name, slug")
-      .eq("id", plumber_id)
-      .single();
+      .eq("id", parsed.data.plumber_id)
+      .maybeSingle();
+    if (!plumber) return NextResponse.json({ error: "Listing not found" }, { status: 404 });
+    if (plumber.profile_id) return NextResponse.json({ error: "This listing has already been claimed" }, { status: 409 });
 
-    if (plumberError || !plumber) {
-      return NextResponse.json(
-        { error: "Plumber not found" },
-        { status: 404 },
-      );
-    }
-
-    // 4. Check not already claimed
-    if (plumber.profile_id) {
-      return NextResponse.json(
-        { error: "This listing has already been claimed" },
-        { status: 409 },
-      );
-    }
-
-    // 5. Check for existing pending claim from this user
-    const { data: existingClaim } = await supabaseAdmin
+    const { data: existing } = await admin
       .from("claims")
       .select("id, status")
-      .eq("plumber_id", plumber_id)
+      .eq("plumber_id", plumber.id)
       .eq("claimant_id", user.id)
-      .in("status", ["pending", "auto_approved"])
+      .eq("status", "pending")
       .maybeSingle();
+    if (existing) return NextResponse.json({ error: "You already have a pending ownership request", status: existing.status }, { status: 409 });
 
-    if (existingClaim) {
-      return NextResponse.json(
-        { error: "You already have a claim for this listing", status: existingClaim.status },
-        { status: 409 },
-      );
-    }
-
-    // 6. Normalise & compare phone numbers
-    const normInput = normalisePhone(phone);
-    const normListing = normalisePhone(plumber.whatsapp_number);
-    const phoneMatch = normInput === normListing && normInput.length >= 9;
-
-    // 7. Insert claim record
-    const { error: claimInsertError } = await supabaseAdmin
-      .from("claims")
-      .insert({
-        plumber_id,
+    const phoneMatchObserved = normalisePhone(parsed.data.phone) === normalisePhone(plumber.whatsapp_number);
+    const enriched = {
+      plumber_id: plumber.id,
+      claimant_id: user.id,
+      phone_entered: parsed.data.phone,
+      status: "pending",
+      phone_match_observed: phoneMatchObserved,
+      review_reason: phoneMatchObserved ? "Phone matched public record; ownership evidence still required" : "Phone differs from public record; manual evidence required",
+    };
+    let insert = await admin.from("claims").insert(enriched);
+    if (insert.error && /column|schema cache/i.test(insert.error.message)) {
+      insert = await admin.from("claims").insert({
+        plumber_id: plumber.id,
         claimant_id: user.id,
-        phone_entered: phone,
-        status: phoneMatch ? "auto_approved" : "pending",
-        resolved_at: phoneMatch ? new Date().toISOString() : null,
-      });
-
-    if (claimInsertError) {
-      console.error("Claim insert error:", claimInsertError);
-      return NextResponse.json(
-        { error: "Failed to submit claim" },
-        { status: 500 },
-      );
-    }
-
-    // 8. If phone matches → auto-link the plumber to the user profile
-    if (phoneMatch) {
-      // Update plumber profile_id
-      const { error: linkError } = await supabaseAdmin
-        .from("plumbers")
-        .update({ profile_id: user.id })
-        .eq("id", plumber_id);
-
-      if (linkError) {
-        console.error("Link error:", linkError);
-        return NextResponse.json(
-          { error: "Phone matched but failed to link listing" },
-          { status: 500 },
-        );
-      }
-
-      // Update user profile role to 'plumber' if not already
-      await supabaseAdmin
-        .from("profiles")
-        .update({ role: "plumber", whatsapp_number: phone })
-        .eq("id", user.id);
-
-      // Notify admin (fire-and-forget)
-      notifyNewClaim({
-        tradingName: plumber.trading_name,
-        claimantEmail: user.email || "unknown",
-        phoneEntered: phone,
-        phoneMatch: true,
-        status: "auto_approved",
-      }).catch(() => {});
-
-      // Revalidate the plumber profile page so claim CTA disappears immediately
-      try {
-        revalidatePath(`/plumber/${plumber.slug ?? plumber_id}`);
-      } catch { /* non-fatal */ }
-
-      return NextResponse.json({
-        status: "auto_approved",
-        message: `${plumber.trading_name} is now linked to your account.`,
+        phone_entered: parsed.data.phone,
+        status: "pending",
       });
     }
+    if (insert.error) {
+      console.error("[claim] Insert failed:", insert.error.message);
+      return NextResponse.json({ error: "Ownership request could not be saved" }, { status: 503 });
+    }
 
-    // 9. Pending → admin will review — notify admin
-    notifyNewClaim({
+    void notifyNewClaim({
       tradingName: plumber.trading_name,
       claimantEmail: user.email || "unknown",
-      phoneEntered: phone,
-      phoneMatch: false,
+      phoneEntered: parsed.data.phone,
+      phoneMatch: phoneMatchObserved,
       status: "pending",
     }).catch(() => {});
 
     return NextResponse.json({
       status: "pending",
-      message:
-        "Your claim has been submitted for manual review. We'll email you once approved.",
-    });
-  } catch (err) {
-    console.error("Claim error:", err);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+      message: "Your ownership request is pending review. We may ask for additional evidence before transferring the listing.",
+    }, { status: 201 });
+  } catch (error) {
+    console.error("[claim] Unexpected error:", error);
+    return NextResponse.json({ error: "Ownership request could not be processed" }, { status: 500 });
   }
 }
 
-/** Strip non-digits, normalise to 27XXXXXXXXX format */
 function normalisePhone(phone: string): string {
-  if (!phone) return "";
-  let digits = phone.replace(/\D/g, "");
-  if (digits.startsWith("0")) digits = "27" + digits.slice(1);
-  if (!digits.startsWith("27") && digits.length === 9) digits = "27" + digits;
+  let digits = (phone || "").replace(/\D/g, "");
+  if (digits.startsWith("0")) digits = `27${digits.slice(1)}`;
+  if (!digits.startsWith("27") && digits.length === 9) digits = `27${digits}`;
   return digits;
 }

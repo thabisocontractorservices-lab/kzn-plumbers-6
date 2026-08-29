@@ -1,50 +1,69 @@
 "use client";
 
 import { useState } from "react";
+import { trackEvent } from "@/lib/analytics";
+import { DIRECTORY_SERVICES } from "@/lib/directory";
 import { whatsAppLink } from "@/lib/utils";
 
-export function BookingForm({
-  plumberId,
-  plumberWhatsApp,
-  plumberName,
-}: {
-  plumberId: string;
-  plumberWhatsApp: string;
-  plumberName: string;
-}) {
+export function BookingForm({ plumberId, plumberWhatsApp, plumberName }: { plumberId: string; plumberWhatsApp: string; plumberName: string }) {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setSubmitting(true);
-    const fd = new FormData(e.currentTarget);
+    setError(null);
+    const form = new FormData(event.currentTarget);
     const payload = {
       plumber_id: plumberId,
-      customer_name: fd.get("name") as string,
-      customer_phone: fd.get("phone") as string,
-      job_description: fd.get("description") as string,
-      preferred_datetime: fd.get("datetime") as string,
+      customer_name: String(form.get("name") || ""),
+      customer_phone: String(form.get("phone") || ""),
+      customer_email: String(form.get("email") || "") || undefined,
+      service: String(form.get("service") || ""),
+      suburb: String(form.get("suburb") || ""),
+      urgency: String(form.get("urgency") || "planned"),
+      job_description: String(form.get("description") || ""),
+      preferred_datetime: String(form.get("datetime") || ""),
+      source_path: window.location.pathname,
     };
 
+    trackEvent("booking_submit", {
+      plumber_id: plumberId,
+      service: payload.service,
+      area: payload.suburb,
+      urgency: payload.urgency,
+    });
+
     try {
-      const res = await fetch("/api/bookings", {
+      const response = await fetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error(await res.text());
-      setSuccess(true);
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Booking request failed");
 
-      // Pre-fill a WhatsApp message to the plumber
-      const summary = `Hi ${plumberName.split(" ")[0]}, I just submitted a booking request via KZN Plumbers Directory:%0A%0A• Name: ${payload.customer_name}%0A• Phone: ${payload.customer_phone}%0A• Job: ${payload.job_description}%0A• When: ${new Date(payload.preferred_datetime).toLocaleString("en-ZA")}`;
-      window.open(
-        `${whatsAppLink(plumberWhatsApp)}?text=${summary}`,
-        "_blank",
-      );
+      setSuccess(true);
+      trackEvent("booking_complete", {
+        plumber_id: plumberId,
+        service: payload.service,
+        area: payload.suburb,
+        urgency: payload.urgency,
+      });
+
+      const message = [
+        `Hi, I found ${plumberName} on kznplumbers.co.za and submitted a booking request.`,
+        `Name: ${payload.customer_name}`,
+        `Phone: ${payload.customer_phone}`,
+        `Area: ${payload.suburb}`,
+        `Job: ${payload.service || payload.job_description}`,
+        `Urgency: ${payload.urgency}`,
+        `Preferred time: ${new Date(payload.preferred_datetime).toLocaleString("en-ZA")}`,
+      ].join("\n");
+      window.open(whatsAppLink(plumberWhatsApp, message), "_blank", "noopener,noreferrer");
     } catch (err) {
-      console.error(err);
-      alert("Booking failed. Please try WhatsApp instead.");
+      setError(err instanceof Error ? err.message : "Booking request failed. Try direct contact instead.");
     } finally {
       setSubmitting(false);
     }
@@ -52,61 +71,44 @@ export function BookingForm({
 
   if (success) {
     return (
-      <div className="bg-teal-light border border-teal/30 rounded-lg p-4 text-center">
-        <div className="text-2xl mb-2">✓</div>
-        <div className="font-semibold text-teal mb-1">Booking sent!</div>
-        <div className="text-xs text-gray-600">
-          The plumber will reply on WhatsApp. We've also opened a chat for you.
-        </div>
+      <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-center">
+        <div className="font-display text-lg font-bold text-emerald-900">Request sent</div>
+        <p className="mt-1 text-xs leading-relaxed text-emerald-800">A WhatsApp chat was opened so you can confirm the scope and arrival time directly.</p>
       </div>
     );
   }
 
   return (
     <form onSubmit={onSubmit} className="space-y-3">
-      <div>
-        <label className="text-xs font-semibold text-gray-700 mb-1 block">
-          Your name
-        </label>
-        <input
-          name="name"
-          required
-          placeholder="e.g. Themba Khumalo"
-          className="input"
-        />
+      <Field label="Your name"><input name="name" autoComplete="name" required minLength={2} className="input" /></Field>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+        <Field label="Cellphone"><input name="phone" type="tel" autoComplete="tel" required minLength={7} placeholder="082 123 4567" className="input" /></Field>
+        <Field label="Email" optional><input name="email" type="email" autoComplete="email" className="input" /></Field>
       </div>
-      <div>
-        <label className="text-xs font-semibold text-gray-700 mb-1 block">
-          Phone
-        </label>
-        <input
-          name="phone"
-          required
-          placeholder="+27 82 123 4567"
-          className="input"
-        />
-      </div>
-      <div>
-        <label className="text-xs font-semibold text-gray-700 mb-1 block">
-          Job description
-        </label>
-        <textarea
-          name="description"
-          required
-          rows={3}
-          placeholder="e.g. Burst pipe in kitchen, water leaking under sink"
-          className="input resize-none"
-        />
-      </div>
-      <div>
-        <label className="text-xs font-semibold text-gray-700 mb-1 block">
-          Preferred date & time
-        </label>
-        <input name="datetime" type="datetime-local" required className="input" />
-      </div>
-      <button type="submit" disabled={submitting} className="btn-primary w-full">
-        {submitting ? "Sending..." : "Send Booking Request"}
-      </button>
+      <Field label="Suburb or town"><input name="suburb" required minLength={2} placeholder="e.g. Glenwood" className="input" /></Field>
+      <Field label="Job type">
+        <select name="service" className="input" defaultValue="">
+          <option value="">Choose a service</option>
+          {DIRECTORY_SERVICES.map((service) => <option key={service.key} value={service.label}>{service.label}</option>)}
+          <option value="Other plumbing work">Other plumbing work</option>
+        </select>
+      </Field>
+      <Field label="Urgency">
+        <select name="urgency" className="input" defaultValue="planned">
+          <option value="planned">Planned or flexible</option>
+          <option value="today">Needs attention today</option>
+          <option value="emergency">Active emergency</option>
+        </select>
+      </Field>
+      <Field label="Describe the problem"><textarea name="description" required minLength={5} maxLength={1500} rows={3} placeholder="What is happening, and where?" className="input resize-none" /></Field>
+      <Field label="Preferred date and time"><input name="datetime" type="datetime-local" required className="input" /></Field>
+      {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-xs text-red-800">{error}</p>}
+      <button type="submit" disabled={submitting} className="btn-primary w-full">{submitting ? "Sending request…" : "Send booking request"}</button>
+      <p className="text-[11px] leading-relaxed text-slate-500">Your contact details are shared with this business for this request. Do not include passwords or banking information.</p>
     </form>
   );
+}
+
+function Field({ label, optional = false, children }: { label: string; optional?: boolean; children: React.ReactNode }) {
+  return <label className="block text-xs font-bold text-slate-700">{label}{optional && <span className="font-normal text-slate-400"> · optional</span>}<span className="mt-1 block">{children}</span></label>;
 }

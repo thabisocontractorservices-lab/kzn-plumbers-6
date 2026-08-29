@@ -2,11 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/src/supabaseClient";
 
 export function LoginForm() {
-  const router = useRouter();
   const [role, setRole] = useState<"plumber" | "homeowner">("plumber");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

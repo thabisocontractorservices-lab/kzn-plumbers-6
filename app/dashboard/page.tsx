@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/src/supabaseClient";
 import { reviewUrl } from "@/lib/google/places";
 import { combinedRating } from "@/lib/utils";
+import { usableProfileAbout } from "@/lib/content-quality";
 import { useAuthGate } from "@/lib/useAuthGate";
 import { AvailabilityToggle } from "@/components/AvailabilityToggle";
 import { ReviewLinkSection } from "@/components/ReviewLinkSection";
@@ -16,6 +17,7 @@ type Plumber = {
   trading_name: string;
   slug: string | null;
   availability_status: "available" | "busy" | "unavailable";
+  accepts_new_work?: boolean;
   google_place_id: string | null;
   google_rating: number | null;
   google_review_count: number | null;
@@ -44,6 +46,14 @@ type Booking = {
   status: "pending" | "confirmed" | "cancelled";
 };
 
+type LeadCounts = {
+  whatsapp_click: number;
+  call_click: number;
+  booking_complete: number;
+};
+
+const EMPTY_LEAD_COUNTS: LeadCounts = { whatsapp_click: 0, call_click: 0, booking_complete: 0 };
+
 export default function DashboardPage() {
   const { user, authChecking } = useAuthGate();
   const [plumber, setPlumber] = useState<Plumber | null>(null);
@@ -53,6 +63,7 @@ export default function DashboardPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminPlumbers, setAdminPlumbers] = useState<Array<{ id: string; trading_name: string; slug: string | null }>>([]);
   const [previewingAs, setPreviewingAs] = useState<string | null>(null);
+  const [leadCounts, setLeadCounts] = useState<LeadCounts>(EMPTY_LEAD_COUNTS);
 
   useEffect(() => {
     if (!user) return;
@@ -89,11 +100,14 @@ export default function DashboardPage() {
         if (plumberList.length > 0) {
           const detailRes = await fetch(`/api/admin/plumber-detail?id=${plumberList[0].id}`);
           if (detailRes.ok) {
-            const { plumber: pd, bookings: bk } = await detailRes.json();
+            const { plumber: pd, bookings: bk, lead_counts: leads } = await detailRes.json();
             if (pd && mounted) {
               p = pd as Plumber;
               setPreviewingAs(p.trading_name);
-              if (mounted) setBookings((bk ?? []) as Booking[]);
+              if (mounted) {
+                setBookings((bk ?? []) as Booking[]);
+                setLeadCounts((leads ?? EMPTY_LEAD_COUNTS) as LeadCounts);
+              }
             }
           }
         }
@@ -125,13 +139,24 @@ export default function DashboardPage() {
       setProfileName(profileRes.data?.full_name ?? user.email ?? "there");
 
       if (p) {
-        const { data } = await supabase
-          .from("bookings")
-          .select("*")
-          .eq("plumber_id", p.id)
-          .order("created_at", { ascending: false })
-          .limit(8);
-        if (mounted) setBookings((data as Booking[]) ?? []);
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        const [bookingResult, eventResult] = await Promise.all([
+          supabase
+            .from("bookings")
+            .select("*")
+            .eq("plumber_id", p.id)
+            .order("created_at", { ascending: false })
+            .limit(8),
+          supabase
+            .from("lead_events")
+            .select("event_name")
+            .eq("plumber_id", p.id)
+            .gte("created_at", thirtyDaysAgo),
+        ]);
+        if (mounted) {
+          setBookings((bookingResult.data as Booking[]) ?? []);
+          setLeadCounts(countLeadEvents(eventResult.data ?? []));
+        }
       }
 
       if (mounted) setLoading(false);
@@ -188,10 +213,12 @@ export default function DashboardPage() {
               Sawubona, {profileName?.split(" ")[0] ?? "there"} 👋
             </h1>
             <p className="text-gray-500 text-sm">
-              Here's what's happening with your business today
+              {isAdmin && previewingAs
+                ? `Admin preview: ${previewingAs}`
+                : "Here’s what’s happening with your business today"}
             </p>
           </div>
-          <AvailabilityToggle plumberId={p.id} initial={p.availability_status} />
+          <AvailabilityToggle plumberId={p.id} initial={p.availability_status} initialConfirmed={p.accepts_new_work ?? false} />
         </header>
 
         {/* Admin: searchable plumber switcher */}
@@ -203,11 +230,12 @@ export default function DashboardPage() {
               setLoading(true);
               const res = await fetch(`/api/admin/plumber-detail?id=${id}`);
               if (res.ok) {
-                const { plumber: pd, bookings: bk } = await res.json();
+                const { plumber: pd, bookings: bk, lead_counts: leads } = await res.json();
                 if (pd) {
                   setPlumber(pd as Plumber);
                   setPreviewingAs(pd.trading_name);
                   setBookings((bk ?? []) as Booking[]);
+                  setLeadCounts((leads ?? EMPTY_LEAD_COUNTS) as LeadCounts);
                 }
               }
               setLoading(false);
@@ -249,10 +277,9 @@ export default function DashboardPage() {
                   Pending verification
                 </strong>
                 <p className="text-sm text-amber-900/80 leading-relaxed">
-                  Your application is under review. Our admin team typically
-                  verifies new plumbers within 24–48 hours. Once approved, your
-                  business will appear on the public directory and you'll start
-                  receiving enquiries.
+                  Your application is under review. The directory will publish a
+                  trust state that reflects the evidence checked. You&apos;ll receive an
+                  email when the review is complete.
                 </p>
                 <p className="text-xs text-amber-900/70 mt-2">
                   In the meantime, complete your profile below to be ready when
@@ -285,7 +312,7 @@ export default function DashboardPage() {
           ) : (
             <>
               <p className="text-xs text-gray-500 mt-2">
-                Complete your profile to unlock 3.4× more enquiries.
+                Complete details help homeowners understand your services before they contact you.
               </p>
               {completeness.missing.length > 0 && (
                 <ul className="mt-3 space-y-1.5">
@@ -306,11 +333,13 @@ export default function DashboardPage() {
           )}
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <Stat icon="👁" value={p.profile_views} label="Profile views (30d)" color="bg-brand-light text-brand" />
-          <Stat icon="📅" value={bookings.length} label="Recent bookings" color="bg-green-100 text-green-800" />
-          <Stat icon="⭐" value={r.rating ?? "—"} label={`Avg rating · ${r.count} reviews`} color="bg-amber-light text-amber" />
-          <Stat icon="💬" value={p.is_emergency ? "24/7" : "Business hrs"} label="Availability" color="bg-purple-100 text-purple-700" />
+        <div className="grid grid-cols-2 gap-4 mb-6 lg:grid-cols-3 xl:grid-cols-6">
+          <Stat icon="👁" value={p.profile_views} label="Recorded profile views" color="bg-brand-light text-brand" />
+          <Stat icon="↗" value={leadCounts.whatsapp_click + leadCounts.call_click} label="Direct contacts · 30d" color="bg-emerald-100 text-emerald-800" />
+          <Stat icon="W" value={leadCounts.whatsapp_click} label="WhatsApp clicks · 30d" color="bg-green-100 text-green-800" />
+          <Stat icon="☎" value={leadCounts.call_click} label="Call clicks · 30d" color="bg-blue-100 text-blue-800" />
+          <Stat icon="📅" value={bookings.length} label="Recent bookings" color="bg-purple-100 text-purple-700" />
+          <Stat icon="★" value={r.rating ?? "—"} label={`Average · ${r.count} reviews`} color="bg-amber-light text-amber" />
         </div>
 
         {reviewLink && (
@@ -325,6 +354,14 @@ export default function DashboardPage() {
   );
 }
 
+
+function countLeadEvents(events: Array<{ event_name: string }>): LeadCounts {
+  const counts = { ...EMPTY_LEAD_COUNTS };
+  for (const event of events) {
+    if (event.event_name in counts) counts[event.event_name as keyof LeadCounts] += 1;
+  }
+  return counts;
+}
 
 function Stat({ icon, value, label, color }: { icon: string; value: string | number; label: string; color: string }) {
   return (
@@ -396,7 +433,7 @@ type CompletenessResult = { percent: number; missing: string[] };
 
 function computeCompleteness(p: Plumber): CompletenessResult {
   const criteria: [boolean, string, string][] = [
-    [!!p.about && p.about.length >= 20, "Add a business description", "/dashboard/profile"],
+    [!!usableProfileAbout(p.about), "Replace the generic description with real business details", "/dashboard/profile"],
     [p.specialties.length > 0, "Add at least one specialty", "/dashboard/profile"],
     [!!p.whatsapp_number, "Add a phone number", "/dashboard/profile"],
     [!!p.pirb_number, "Add your PIRB number", "/dashboard/profile"],

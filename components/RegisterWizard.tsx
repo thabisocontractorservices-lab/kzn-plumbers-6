@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/src/supabaseClient";
-import { KZN_AREAS, SPECIALTIES, formatWhatsApp, isValidSAPhone } from "@/lib/utils";
+import { KZN_AREAS, SPECIALTIES, isValidSAPhone } from "@/lib/utils";
 
 type FileWithPreview = {
   file: File;
@@ -47,18 +47,24 @@ export function RegisterWizard() {
 
   // If user is already logged in, skip to step 2 (business details)
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", session.user.id)
+          .maybeSingle();
         setLoggedInEmail(session.user.email ?? null);
         setAccount((prev) => ({
           ...prev,
           email: session.user.email ?? "",
-          full_name: session.user.user_metadata?.full_name ?? "",
+          full_name: profile?.full_name ?? session.user.user_metadata?.full_name ?? "",
+          phone: profile?.phone_number ?? profile?.phone ?? "",
+          whatsapp: profile?.whatsapp_number ?? profile?.phone_number ?? profile?.phone ?? "",
         }));
         setStep(2);
       }
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [biz, setBiz] = useState<Step2>({
     trading_name: "",
@@ -91,8 +97,8 @@ export function RegisterWizard() {
       if (!account.whatsapp.trim()) return "Please enter your business WhatsApp number.";
       if (!isValidSAPhone(account.whatsapp))
         return "Please enter a valid SA WhatsApp number (e.g. 082 123 4567 or +27 82 123 4567).";
-      if (account.password.length < 6)
-        return "Password must be at least 6 characters.";
+      if (account.password.length < 8)
+        return "Password must be at least 8 characters.";
       if (account.password !== account.confirm)
         return "Passwords do not match.";
     }
@@ -120,7 +126,6 @@ export function RegisterWizard() {
   async function submitApplication() {
     setError(null);
 
-    // Re-validate everything before the network call.
     if (!loggedInEmail) {
       const step1Err = validateStep(1);
       if (step1Err) {
@@ -139,78 +144,21 @@ export function RegisterWizard() {
     setSubmitting(true);
 
     try {
-      // ── Check if user is already logged in ──────────────────────────────
-      // If they're already authenticated (e.g. logged-in plumber adding a
-      // listing, or admin testing), skip signUp and use their existing session.
-      const { data: { session: existingSession } } = await supabase.auth.getSession();
-      const alreadyLoggedIn = !!existingSession?.user;
+      const { data: { session } } = await supabase.auth.getSession();
+      const userEmail = session?.user.email ?? account.email;
+      const fullName = account.full_name || session?.user.user_metadata?.full_name || biz.trading_name;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
 
-      let userEmail = account.email;
-
-      if (!alreadyLoggedIn) {
-        // ── Check if this user already exists (prevents duplicate emails) ──
-        // Call /api/register/check first. If the auth user already exists,
-        // skip signUp() entirely — no duplicate confirmation email sent.
-        const checkRes = await fetch("/api/register/check", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: account.email }),
-        });
-        const checkData = await checkRes.json();
-        const userAlreadyExists = checkData.exists === true;
-
-        if (!userAlreadyExists) {
-          // ── Brand new user: call signUp() ────────────────────────────────
-          // Creates the auth user AND sends ONE confirmation email.
-          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email: account.email,
-            password: account.password,
-            options: {
-              emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
-              data: {
-                full_name: account.full_name,
-                role: "plumber",
-              },
-            },
-          });
-
-          if (signUpError) {
-            const msg = signUpError.message.toLowerCase();
-
-            if (msg.includes("security purposes") || msg.includes("rate limit") || msg.includes("request this after")) {
-              const seconds = msg.match(/after (\d+) second/)?.[1] ?? "60";
-              setError(`Too many attempts. Please wait ${seconds} seconds and try again.`);
-              setSubmitting(false);
-              return;
-            }
-
-            // Any other signUp error that isn't "already exists" — show it
-            if (!msg.includes("already registered") && !msg.includes("already been registered") && !msg.includes("user already exists")) {
-              setError(signUpError.message);
-              setSubmitting(false);
-              return;
-            }
-          }
-
-          // Brief pause to let Supabase trigger create the profiles row
-          await new Promise((r) => setTimeout(r, 1500));
-        }
-        // If user already exists, skip signUp and go straight to /api/register
-        // to create the plumber row (no duplicate email sent)
-      } else {
-        // Already logged in — use their email
-        userEmail = existingSession.user.email ?? account.email;
-      }
-
-      // ── Step 2: Server route inserts plumber row ─────────────────────────
-      // Uses service-role to bypass RLS (user may have no session yet).
-      const res = await fetch("/api/register", {
+      const response = await fetch("/api/register", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
+          full_name: fullName,
           email: userEmail,
-          phone: account.phone,
-          whatsapp: account.whatsapp,
+          phone: account.phone || account.whatsapp,
+          whatsapp: account.whatsapp || account.phone,
+          password: session ? undefined : account.password,
           business: {
             trading_name: biz.trading_name,
             area: biz.area,
@@ -223,61 +171,38 @@ export function RegisterWizard() {
           },
         }),
       });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Registration failed. Please try again.");
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error ?? "Registration failed. Please try again.");
-        setSubmitting(false);
-        return;
-      }
-
-      // ── Step 3: Upload files (fire-and-forget — don't block success) ────
       const allFiles: { file: File; type: string; certName?: string }[] = [];
+      for (const file of pirbCert) allFiles.push({ file: file.file, type: "cert", certName: "PIRB Certificate" });
+      for (const file of otherCerts) allFiles.push({ file: file.file, type: "cert", certName: file.file.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " ") });
+      for (const file of profilePhoto) allFiles.push({ file: file.file, type: "profile_photo" });
+      for (const file of workPhotos) allFiles.push({ file: file.file, type: "photo" });
 
-      for (const f of pirbCert) {
-        allFiles.push({ file: f.file, type: "cert", certName: "PIRB Certificate" });
-      }
-      for (const f of otherCerts) {
-        allFiles.push({
-          file: f.file,
-          type: "cert",
-          certName: f.file.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " "),
-        });
-      }
-      for (const f of profilePhoto) {
-        allFiles.push({ file: f.file, type: "profile_photo" });
-      }
-      for (const f of workPhotos) {
-        allFiles.push({ file: f.file, type: "photo" });
-      }
-
-      if (allFiles.length > 0) {
-        setUploadProgress(`Uploading files (0/${allFiles.length})...`);
-
-        for (let i = 0; i < allFiles.length; i++) {
-          setUploadProgress(`Uploading files (${i + 1}/${allFiles.length})...`);
-          const fd = new FormData();
-          fd.append("file", allFiles[i].file);
-          fd.append("type", allFiles[i].type);
-          fd.append("email", userEmail);
-          if (allFiles[i].certName) fd.append("cert_name", allFiles[i].certName!);
-
-          try {
-            await fetch("/api/upload", { method: "POST", body: fd });
-          } catch {
-            // Silently continue — files can be re-uploaded from dashboard
+      if (allFiles.length > 0 && data.plumberId && data.uploadToken) {
+        for (let index = 0; index < allFiles.length; index++) {
+          setUploadProgress(`Uploading files (${index + 1}/${allFiles.length})...`);
+          const formData = new FormData();
+          formData.append("file", allFiles[index].file);
+          formData.append("type", allFiles[index].type);
+          formData.append("plumber_id", data.plumberId);
+          formData.append("upload_token", data.uploadToken);
+          if (allFiles[index].certName) formData.append("cert_name", allFiles[index].certName!);
+          const uploadHeaders: Record<string, string> = {};
+          if (session?.access_token) uploadHeaders.Authorization = `Bearer ${session.access_token}`;
+          const upload = await fetch("/api/upload", { method: "POST", headers: uploadHeaders, body: formData });
+          if (!upload.ok) {
+            console.warn(`Upload ${index + 1} could not be completed`);
           }
         }
-
-        setUploadProgress(null);
       }
 
-      // Success — show appropriate screen
-      setSubmitting(false);
+      setUploadProgress(null);
       setStep(4);
-    } catch {
-      setError("Network error. Please check your connection and try again.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error. Please try again.");
+    } finally {
       setSubmitting(false);
     }
   }
@@ -288,7 +213,7 @@ export function RegisterWizard() {
     <>
       {/* Stepper */}
       <div className="flex items-center justify-between mb-10">
-        {[1, 2, 3, 4].map((s, i) => (
+        {[1, 2, 3, 4].map((s) => (
           <div key={s} className="flex items-center flex-1 last:flex-none">
             <div
               className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm border-2 transition-all ${
@@ -573,16 +498,15 @@ export function RegisterWizard() {
               <strong className="text-amber-900">Under review</strong>
             </div>
             <p className="text-sm text-amber-800">
-              Applications are typically reviewed within <strong>24–48 hours</strong>.
-              You&apos;ll receive an email once your profile is approved and live on the directory.
+              We&apos;ll review the business details and any supplied evidence before the profile goes live. You&apos;ll receive an email when the review is complete.
             </p>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <button onClick={() => { window.location.href = "/dashboard"; }} className="btn-primary">
+            <button onClick={() => router.push("/dashboard")} className="btn-primary">
               Go to dashboard →
             </button>
-            <button onClick={() => { window.location.href = "/"; }} className="btn-secondary">
+            <button onClick={() => router.push("/")} className="btn-secondary">
               Back to directory
             </button>
           </div>
@@ -607,7 +531,7 @@ export function RegisterWizard() {
             <div className="text-sm text-gray-700 space-y-2">
               <div>1. 📧 <strong>Confirm your email</strong> — click the link we just sent</div>
               <div>2. 🔑 <strong>Log in</strong> — use your email &amp; password</div>
-              <div>3. ⏳ <strong>Admin review</strong> — we verify your credentials (24–48 hrs)</div>
+              <div>3. ⏳ <strong>Admin review</strong> — we review the business and supplied evidence</div>
               <div>4. 🚀 <strong>Go live</strong> — your profile appears on the directory</div>
             </div>
           </div>
@@ -617,10 +541,10 @@ export function RegisterWizard() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <button onClick={() => { window.location.href = "/login"; }} className="btn-primary">
+            <button onClick={() => router.push("/login")} className="btn-primary">
               Go to login →
             </button>
-            <button onClick={() => { window.location.href = "/"; }} className="btn-secondary">
+            <button onClick={() => router.push("/")} className="btn-secondary">
               Back to directory
             </button>
           </div>

@@ -1,205 +1,113 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { supabase } from "@/src/supabaseClient";
+import { ArrowLeft, ArrowRight, MapPin } from "lucide-react";
+import { PlumberCard } from "@/components/PlumberCard";
+import { getAreaConfig } from "@/lib/directory";
+import { getPublicPlumbers } from "@/lib/directory-data";
+import { safeJsonLd } from "@/lib/json-ld";
+import { REGIONS } from "@/lib/regions";
+import { absoluteUrl, SITE_NAME } from "@/lib/site";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// /all-plumbers — HTML sitemap page listing every verified plumber, grouped
-// by area, alphabetically within each area.
-//
-// PURPOSE (SEO): Google has ~95 plumber profile URLs sitting in the
-// "Discovered - currently not indexed" queue. This page gives Google's
-// crawler a single landing point where every profile is one click away,
-// dramatically improving crawl efficiency and helping the unindexed bucket
-// shrink faster.
-//
-// This is *also* user-friendly — a homeowner who wants to browse all
-// plumbers in their area gets a fast, scannable view.
-// ─────────────────────────────────────────────────────────────────────────────
+export const revalidate = 300;
 
-export const revalidate = 86400; // refresh daily
+type Search = Promise<Record<string, string | string[] | undefined>>;
 
-export const metadata: Metadata = {
-  title:
-    "All Verified Plumbers in KwaZulu-Natal | KZN Plumbers Directory",
-  description:
-    "Browse every PIRB-verified plumber on KZN Plumbers — 1,200+ businesses across Durban, Pietermaritzburg, Ballito, South Coast and the rest of KwaZulu-Natal. Sorted by area for easy browsing.",
-  alternates: {
-    canonical: "https://www.kznplumbers.co.za/all-plumbers",
-  },
-  openGraph: {
-    title: "All Verified Plumbers in KwaZulu-Natal",
-    description:
-      "Complete directory of every PIRB-verified plumber across KZN — grouped by area for easy browsing.",
-    url: "https://www.kznplumbers.co.za/all-plumbers",
-    siteName: "KZN Plumbers",
-    type: "website",
-    locale: "en_ZA",
-  },
-};
+function value(input: string | string[] | undefined): string {
+  return Array.isArray(input) ? input[0] ?? "" : input ?? "";
+}
 
-type PlumberLite = {
-  id: string;
-  slug: string | null;
-  trading_name: string;
-  area: string;
-  is_certified: boolean;
-  is_emergency: boolean;
-};
+function pageNumber(input: string | string[] | undefined): number {
+  const parsed = Number(value(input) || "1");
+  return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, 100) : 1;
+}
 
-export default async function AllPlumbersPage() {
-  const { data: plumbers, error } = await supabase
-    .from("plumbers")
-    .select("id, slug, trading_name, area, is_certified, is_emergency")
-    .eq("is_verified", true)
-    .order("area", { ascending: true })
-    .order("trading_name", { ascending: true });
+export async function generateMetadata({ searchParams }: { searchParams: Search }): Promise<Metadata> {
+  const search = await searchParams;
+  const page = pageNumber(search.page);
+  const area = value(search.area);
+  const canonical = page > 1 && !area ? `/all-plumbers?page=${page}` : "/all-plumbers";
+  return {
+    title: `All KZN Plumber Directory Records${page > 1 ? ` — Page ${page}` : ""} | KZN Plumbers`,
+    description: "Browse published plumbing business records across KwaZulu-Natal, with transparent verification labels and direct contact options.",
+    alternates: { canonical },
+    robots: area ? { index: false, follow: true } : { index: true, follow: true },
+    openGraph: { title: "All KZN plumber directory records", description: "Browse KZN plumbing businesses by area and verification state.", url: absoluteUrl(canonical), type: "website", siteName: SITE_NAME },
+  };
+}
 
-  if (error || !plumbers || plumbers.length === 0) {
-    return (
-      <div className="max-w-3xl mx-auto px-4 py-12">
-        <h1 className="font-display text-3xl mb-4">Directory unavailable</h1>
-        <p>
-          We couldn&apos;t load the plumber directory right now. Please try
-          again shortly.
-        </p>
-      </div>
-    );
-  }
+export default async function AllPlumbersPage({ searchParams }: { searchParams: Search }) {
+  const search = await searchParams;
+  const page = pageNumber(search.page);
+  const areaKey = value(search.area);
+  const area = getAreaConfig(areaKey);
+  const limit = 24;
+  const { plumbers, total } = await getPublicPlumbers({ areas: area?.dbAreas, limit, offset: (page - 1) * limit });
+  const totalPages = Math.max(1, Math.ceil(total / limit));
 
-  // Group by area
-  const byArea: Record<string, PlumberLite[]> = {};
-  for (const p of plumbers as PlumberLite[]) {
-    const area = p.area?.trim() || "Other KZN";
-    if (!byArea[area]) byArea[area] = [];
-    byArea[area].push(p);
-  }
-  const sortedAreas = Object.keys(byArea).sort();
-
-  const totalPlumbers = plumbers.length;
-  const totalAreas = sortedAreas.length;
+  const itemList = {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    name: area ? `Plumber directory records in ${area.label}` : "KwaZulu-Natal plumber directory records",
+    url: absoluteUrl("/all-plumbers"),
+    mainEntity: {
+      "@type": "ItemList",
+      numberOfItems: plumbers.length,
+      itemListElement: plumbers.map((plumber, index) => ({
+        "@type": "ListItem",
+        position: (page - 1) * limit + index + 1,
+        name: plumber.trading_name,
+        url: absoluteUrl(`/plumber/${plumber.slug ?? plumber.id}`),
+      })),
+    },
+  };
 
   return (
-    <main className="bg-white min-h-screen">
-      {/* Hero */}
-      <section className="bg-gradient-to-b from-brand-light to-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-16">
-          <nav className="text-sm text-gray-500 mb-3">
-            <Link href="/" className="hover:text-brand">
-              Home
-            </Link>
-            <span className="mx-2">›</span>
-            <span>All Plumbers</span>
-          </nav>
-
-          <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl text-gray-900 mb-3 leading-tight">
-            All Verified Plumbers in KwaZulu-Natal
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(itemList) }} />
+      <section className="bg-slate-950 px-4 py-12 text-white sm:px-6 sm:py-16">
+        <div className="mx-auto max-w-7xl">
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-300">Published records</p>
+          <h1 className="mt-3 font-display text-4xl font-bold sm:text-5xl">
+            {area ? `Plumber records in ${area.label}` : "All KwaZulu-Natal plumber records"}
           </h1>
-
-          <p className="text-gray-600 text-base sm:text-lg max-w-3xl leading-relaxed">
-            Every PIRB-verified plumber on our directory —{" "}
-            <strong>{totalPlumbers.toLocaleString()}</strong> businesses
-            across <strong>{totalAreas}</strong> areas of KZN. Tap an area to
-            jump to it, or click any plumber to view their profile, contact
-            details, and reviews.
-          </p>
+          <p className="mt-4 max-w-3xl text-slate-200">Browse in manageable pages instead of downloading the entire database. Each label explains whether a credential was checked, a business claimed the listing, or the profile remains an unclaimed public record.</p>
+          <div className="mt-5 inline-flex rounded-lg border border-white/15 bg-white/8 px-4 py-3 text-sm font-bold">{total.toLocaleString()} matching records</div>
         </div>
       </section>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-        {/* Table of contents */}
-        <div className="bg-brand-light/40 border border-brand-light rounded-xl p-4 sm:p-5 mb-10">
-          <h2 className="font-display text-lg text-gray-900 mb-3">
-            Jump to area
-          </h2>
-          <div className="flex flex-wrap gap-2">
-            {sortedAreas.map((area) => (
-              <a
-                key={area}
-                href={`#area-${slugifyForAnchor(area)}`}
-                className="text-sm px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:border-brand hover:text-brand transition-colors"
-              >
-                {area}
-                <span className="text-gray-400 ml-1">
-                  ({byArea[area].length})
-                </span>
-              </a>
+      <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-14">
+        <section className="rounded-2xl border border-slate-200 bg-white p-5">
+          <div className="flex items-center gap-2"><MapPin className="h-5 w-5 text-brand" aria-hidden="true" /><h2 className="font-display text-xl font-bold text-slate-950">Browse curated regional pages</h2></div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link href="/all-plumbers" className="rounded-full border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-700 hover:border-brand hover:text-brand">All KZN</Link>
+            {REGIONS.map((region) => (
+              <Link key={region.slug} href={`/plumbers/${region.slug}`} className="rounded-full border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-700 hover:border-brand hover:text-brand">{region.shortName}</Link>
             ))}
           </div>
-        </div>
-
-        {/* Areas with plumber lists */}
-        <div className="space-y-12">
-          {sortedAreas.map((area) => (
-            <section
-              key={area}
-              id={`area-${slugifyForAnchor(area)}`}
-              className="scroll-mt-24"
-            >
-              <h2 className="font-display text-2xl sm:text-3xl text-gray-900 mb-1">
-                Plumbers in {area}
-              </h2>
-              <p className="text-sm text-gray-500 mb-5">
-                {byArea[area].length} verified plumber
-                {byArea[area].length === 1 ? "" : "s"}
-              </p>
-
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {byArea[area].map((p) => (
-                  <Link
-                    key={p.id}
-                    href={`/plumber/${p.slug ?? p.id}`}
-                    prefetch={false}
-                    className="block p-3 bg-white border border-gray-200 rounded-lg hover:border-brand hover:shadow-card transition-all"
-                  >
-                    <div className="font-semibold text-gray-900 text-sm mb-1 line-clamp-1">
-                      {p.trading_name}
-                    </div>
-                    <div className="flex gap-1.5 flex-wrap">
-                      {p.is_certified && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-light text-teal font-semibold uppercase tracking-wide">
-                          ✓ PIRB
-                        </span>
-                      )}
-                      {p.is_emergency && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emergency-light text-emergency font-semibold uppercase tracking-wide">
-                          🚨 24/7
-                        </span>
-                      )}
-                      {!p.is_certified && !p.is_emergency && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-semibold uppercase tracking-wide">
-                          Verified
-                        </span>
-                      )}
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
-
-        {/* Bottom CTA */}
-        <section className="mt-16 pt-10 border-t border-gray-200 text-center">
-          <h2 className="font-display text-2xl text-gray-900 mb-2">
-            Can&apos;t find what you need?
-          </h2>
-          <p className="text-gray-600 mb-5 max-w-xl mx-auto">
-            Search by suburb or problem on the homepage — we&apos;ll match you
-            with the right plumber for the job.
-          </p>
-          <Link href="/" className="btn-primary inline-flex">
-            Back to homepage →
-          </Link>
         </section>
-      </div>
-    </main>
-  );
-}
 
-function slugifyForAnchor(area: string): string {
-  return area
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+        {plumbers.length ? (
+          <div className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            {plumbers.map((plumber, index) => (
+              <PlumberCard key={plumber.id} plumber={plumber} sourcePage="all_plumbers" rankPosition={(page - 1) * limit + index + 1} />
+            ))}
+          </div>
+        ) : (
+          <div className="mt-8 rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-600">No records match this page.</div>
+        )}
+
+        {totalPages > 1 && (
+          <nav aria-label="Directory pages" className="mt-10 flex items-center justify-between border-t border-slate-200 pt-6">
+            {page > 1 ? (
+              <Link href={page === 2 ? "/all-plumbers" : `/all-plumbers?page=${page - 1}`} className="btn-secondary"><ArrowLeft className="h-4 w-4" /> Previous</Link>
+            ) : <span />}
+            <span className="text-sm text-slate-600">Page {page} of {totalPages}</span>
+            {page < totalPages ? (
+              <Link href={`/all-plumbers?page=${page + 1}`} className="btn-secondary">Next <ArrowRight className="h-4 w-4" /></Link>
+            ) : <span />}
+          </nav>
+        )}
+      </main>
+    </>
+  );
 }

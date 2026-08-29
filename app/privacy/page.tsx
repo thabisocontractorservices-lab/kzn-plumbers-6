@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Privacy Policy — KZN Plumbers Directory",
-  description: "Privacy policy for kznplumbers.co.za — how we collect, use, and protect your personal information.",
+  description: "Privacy policy for kznplumbers.co.za — how we collect, use, share, retain, and protect personal information.",
+  alternates: { canonical: "/privacy" },
 };
 
 export default function PrivacyPage() {
@@ -11,7 +12,7 @@ export default function PrivacyPage() {
       <section className="bg-gradient-to-br from-brand to-brand-dark text-white py-10 sm:py-14 px-4 sm:px-6">
         <div className="max-w-3xl mx-auto text-center">
           <h1 className="font-display text-2xl sm:text-4xl font-extrabold mb-2">Privacy Policy</h1>
-          <p className="text-sm opacity-80">Last updated: 1 August 2026</p>
+          <p className="text-sm opacity-80">Last updated: 16 August 2026</p>
         </div>
       </section>
 
@@ -40,8 +41,9 @@ export default function PrivacyPage() {
 
         <h3>Information collected automatically</h3>
         <ul>
-          <li><strong>Analytics:</strong> We use Google Analytics 4 to collect anonymised usage data including pages visited, time on site, device type, and approximate location (city level).</li>
-          <li><strong>Cookies:</strong> We use essential cookies for authentication sessions. No advertising or tracking cookies are used.</li>
+          <li><strong>Optional analytics:</strong> With your consent, Google Analytics 4 collects usage information such as pages visited, device type, interaction timing, and approximate location. We do not send booking descriptions or contact-form messages to Google Analytics.</li>
+          <li><strong>First-party conversion records:</strong> We record limited operational events such as a WhatsApp click or completed booking, including the profile, source page, area or service filter. These records are used to measure whether the directory produces useful connections and exclude message content.</li>
+          <li><strong>Browser storage and cookies:</strong> Essential cookies support authentication. Your analytics choice is stored in the browser. We do not use the directory for advertising personalisation.</li>
         </ul>
 
         <h2>3. How We Use Your Information</h2>
@@ -58,7 +60,7 @@ export default function PrivacyPage() {
         <p>We do not sell your personal information to third parties. We may share information with:</p>
         <ul>
           <li><strong>Service providers:</strong> Supabase (database hosting), Vercel (website hosting), Resend (email delivery), Google (analytics and reviews API). These providers process data on our behalf under their own privacy policies.</li>
-          <li><strong>Public display:</strong> Plumber profiles (trading name, area, specialties, ratings, photos, certifications) are publicly visible on the directory. This is the core purpose of the service.</li>
+          <li><strong>Public display:</strong> Plumber profiles can show the trading name, area, listed services, ratings, work photos, trust state, and credential identifiers or labels. Private evidence files are not published as general downloads.</li>
           <li><strong>Legal requirements:</strong> We may disclose information if required by law or to protect our rights.</li>
         </ul>
 
