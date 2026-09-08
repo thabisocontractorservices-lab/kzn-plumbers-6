@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { z } from "zod";
 import { sendContactMessage } from "@/lib/email";
-import { SITE_URL } from "@/lib/site";
+import { accessFailure, privateJson, requireSameOrigin } from "@/lib/server-access";
+import { readAuthFlowJson } from "@/lib/auth-flow-input";
 
 const Schema = z.object({
   name: z.string().trim().min(2).max(120),
@@ -13,26 +14,13 @@ const Schema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const origin = request.headers.get("origin");
-  if (origin && process.env.NODE_ENV === "production") {
-    const originHost = new URL(origin).host;
-    const requestHost = request.headers.get("host");
-    if (originHost !== requestHost && originHost !== new URL(SITE_URL).host) {
-      return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
-    }
-  }
-
-  if (Number(request.headers.get("content-length") || 0) > 8192) {
-    return NextResponse.json({ error: "Message is too large" }, { status: 413 });
-  }
-
-  let body: unknown;
-  try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid request" }, { status: 400 }); }
-  const parsed = Schema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: "Check the form fields" }, { status: 400 });
-  if (parsed.data.website) return NextResponse.json({ sent: true });
-
-  const sent = await sendContactMessage(parsed.data);
-  if (!sent) return NextResponse.json({ error: "Message delivery is temporarily unavailable. Please use email or WhatsApp." }, { status: 503 });
-  return NextResponse.json({ sent: true }, { status: 201 });
+  try {
+    requireSameOrigin(request);
+    const parsed = Schema.safeParse(await readAuthFlowJson(request, 16384));
+    if (!parsed.success) return privateJson({ error: "Check the form fields." }, 400);
+    // A filled honeypot is rejected by the schema, not disguised as delivered mail.
+    const sent = await sendContactMessage(parsed.data);
+    if (!sent) return privateJson({ error: "Message delivery is temporarily unavailable. Please use email or WhatsApp." }, 503);
+    return privateJson({ sent: true }, 201);
+  } catch (error) { return accessFailure(error); }
 }

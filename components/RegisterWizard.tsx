@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/src/supabaseClient";
 import { KZN_AREAS, SPECIALTIES, isValidSAPhone } from "@/lib/utils";
 
+const DRAFT_KEY = "kzn_registration_draft_v1";
+
 type FileWithPreview = {
   file: File;
   preview: string; // object URL for images, empty for docs
@@ -36,6 +38,11 @@ export function RegisterWizard() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loggedInEmail, setLoggedInEmail] = useState<string | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [confirmationEmail, setConfirmationEmail] = useState<string | null>(null);
+  const [uploadReport, setUploadReport] = useState<{ total: number; confirmed: number; uncertain: string[]; warnings: string[] } | null>(null);
+  const authUserId = useRef<string | null>(null);
+  const inFlight = useRef(false);
   const [account, setAccount] = useState<Step1>({
     full_name: "",
     email: "",
@@ -45,27 +52,6 @@ export function RegisterWizard() {
     confirm: "",
   });
 
-  // If user is already logged in, skip to step 2 (business details)
-  useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", session.user.id)
-          .maybeSingle();
-        setLoggedInEmail(session.user.email ?? null);
-        setAccount((prev) => ({
-          ...prev,
-          email: session.user.email ?? "",
-          full_name: profile?.full_name ?? session.user.user_metadata?.full_name ?? "",
-          phone: profile?.phone_number ?? profile?.phone ?? "",
-          whatsapp: profile?.whatsapp_number ?? profile?.phone_number ?? profile?.phone ?? "",
-        }));
-        setStep(2);
-      }
-    });
-  }, []);
   const [biz, setBiz] = useState<Step2>({
     trading_name: "",
     area: "Durban North",
@@ -77,6 +63,50 @@ export function RegisterWizard() {
     pirb_number: "",
   });
 
+  useEffect(() => {
+    let active = true;
+    // Read auth once before allowing input; no late profile response may skip steps
+    // or overwrite phone numbers the user has begun entering.
+    void (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!active) return;
+      if (user && !user.email_confirmed_at) {
+        setConfirmationEmail(user.email || "your account email");
+        return;
+      }
+      if (!user?.email) return;
+      const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+      if (!active) return;
+      authUserId.current = user.id;
+      setLoggedInEmail(user.email);
+      setAccount((prev) => ({
+        ...prev, email: user.email!,
+        full_name: typeof profile?.full_name === "string" ? profile.full_name : String(user.user_metadata?.full_name || ""),
+        phone: String(profile?.phone_number || profile?.phone || ""),
+        whatsapp: String(profile?.whatsapp_number || ""),
+      }));
+      // This short-lived same-tab draft contains no passwords or file bytes. A different
+      // signed-in email never restores it, and contact inputs remain editable.
+      try {
+        const raw = sessionStorage.getItem(DRAFT_KEY);
+        const draft = raw ? JSON.parse(raw) : null;
+        if (draft && draft.email === user.email.toLowerCase() && draft.expires > Date.now()) {
+          if (draft.business && typeof draft.business.trading_name === "string" && KZN_AREAS.includes(draft.business.area)
+            && Array.isArray(draft.business.specialties) && draft.business.specialties.every((item: string) => SPECIALTIES.includes(item as typeof SPECIALTIES[number]))) {
+            setBiz((prev) => ({ ...prev, ...draft.business }));
+          }
+          setAccount((prev) => ({ ...prev,
+            full_name: typeof draft.full_name === "string" ? draft.full_name : prev.full_name,
+            phone: typeof draft.phone === "string" ? draft.phone : prev.phone,
+            whatsapp: typeof draft.whatsapp === "string" ? draft.whatsapp : prev.whatsapp,
+          }));
+        } else if (draft) sessionStorage.removeItem(DRAFT_KEY);
+      } catch { /* Storage may be blocked. Re-entering the form still works. */ }
+    })().catch(() => { if (active) setError("Session could not be checked. Sign in again if you already have an account."); })
+      .finally(() => { if (active) setAuthChecking(false); });
+    return () => { active = false; };
+  }, []);
+
   // File state for step 3
   const [pirbCert, setPirbCert] = useState<FileWithPreview[]>([]);
   const [otherCerts, setOtherCerts] = useState<FileWithPreview[]>([]);
@@ -87,127 +117,135 @@ export function RegisterWizard() {
   // Validate the current step before allowing user to proceed.
   // Returns the human-readable error or null if valid.
   function validateStep(s: number): string | null {
-    if (s === 1 && !loggedInEmail) {
-      // Only validate account fields if user is NOT already logged in
-      if (!account.full_name.trim()) return "Please enter your full name.";
-      if (!account.email.trim()) return "Please enter your email.";
-      if (!account.phone.trim()) return "Please enter your cellphone number.";
-      if (!isValidSAPhone(account.phone))
+    if (s === 1) {
+      if (account.full_name.trim().length < 2 || account.full_name.trim().length > 120) return "Enter your full name (2–120 characters).";
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(account.email.trim())) return "Please enter a valid email address.";
+      if (!isValidSAPhone(account.phone) || !/^[+\d\s()-]+$/.test(account.phone) || account.phone.length > 30)
         return "Please enter a valid SA cellphone number (e.g. 082 123 4567 or +27 82 123 4567).";
-      if (!account.whatsapp.trim()) return "Please enter your business WhatsApp number.";
-      if (!isValidSAPhone(account.whatsapp))
+      if (!isValidSAPhone(account.whatsapp) || !/^[+\d\s()-]+$/.test(account.whatsapp) || account.whatsapp.length > 30)
         return "Please enter a valid SA WhatsApp number (e.g. 082 123 4567 or +27 82 123 4567).";
-      if (account.password.length < 8)
-        return "Password must be at least 8 characters.";
-      if (account.password !== account.confirm)
-        return "Passwords do not match.";
+      if (!loggedInEmail) {
+        if (account.password.length < 8 || account.password.length > 128) return "Password must be 8–128 characters.";
+        if (account.password !== account.confirm) return "Passwords do not match.";
+      }
     }
     if (s === 2) {
       if (!biz.trading_name.trim()) return "Please enter a trading name.";
       if (!biz.area) return "Please select an area of operation.";
-      if (!biz.hourly_rate || biz.hourly_rate < 1)
-        return "Please enter a valid hourly rate.";
+      if (!Number.isInteger(biz.hourly_rate) || biz.hourly_rate < 0 || biz.hourly_rate > 100000)
+        return "Enter an hourly rate from R0 to R100,000 (R0 means contact for a quote).";
       if (biz.specialties.length === 0)
         return "Please select at least one specialty.";
     }
     return null;
   }
 
-  function next() {
+  function saveDraft() {
+    try {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+        expires: Date.now() + 60 * 60 * 1000, email: account.email.trim().toLowerCase(),
+        full_name: account.full_name, phone: account.phone, whatsapp: account.whatsapp, business: biz,
+      }));
+    } catch { /* Do not block signup when browser storage is unavailable. */ }
+  }
+
+  async function next() {
+    if (inFlight.current || authChecking) return;
     setError(null);
     const err = validateStep(step);
-    if (err) {
-      setError(err);
-      return;
-    }
-    setStep(step + 1);
+    if (err) { setError(err); return; }
+    if (step !== 1 || loggedInEmail) { setStep(step + 1); return; }
+    inFlight.current = true;
+    setSubmitting(true);
+    saveDraft();
+    try {
+      const { data, error: signupError } = await supabase.auth.signUp({
+        email: account.email.trim().toLowerCase(), password: account.password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent("/register")}`,
+          data: { full_name: account.full_name.trim() },
+        },
+      });
+      if (signupError) throw signupError;
+      setAccount((prev) => ({ ...prev, password: "", confirm: "" }));
+      if (data.session && data.user?.email_confirmed_at && data.user.email) {
+        authUserId.current = data.user.id;
+        setLoggedInEmail(data.user.email);
+        setAccount((prev) => ({ ...prev, email: data.user!.email! }));
+        setStep(2);
+      } else setConfirmationEmail(account.email.trim());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Account setup could not be completed. Please try signing in.");
+    } finally { inFlight.current = false; setSubmitting(false); }
   }
 
   async function submitApplication() {
+    if (inFlight.current || authChecking) return;
     setError(null);
-
-    if (!loggedInEmail) {
-      const step1Err = validateStep(1);
-      if (step1Err) {
-        setError(step1Err);
-        setStep(1);
-        return;
-      }
-    }
-    const step2Err = validateStep(2);
-    if (step2Err) {
-      setError(step2Err);
-      setStep(2);
-      return;
-    }
-
+    if (!loggedInEmail) { setStep(1); setError("Confirm your email and sign in before submitting a business."); return; }
+    const accountError = validateStep(1);
+    if (accountError) { setError(accountError); setStep(1); return; }
+    const businessError = validateStep(2);
+    if (businessError) { setError(businessError); setStep(2); return; }
+    inFlight.current = true;
     setSubmitting(true);
-
+    saveDraft();
     try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
       const { data: { session } } = await supabase.auth.getSession();
-      const userEmail = session?.user.email ?? account.email;
-      const fullName = account.full_name || session?.user.user_metadata?.full_name || biz.trading_name;
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
-
+      if (userError || !user?.email_confirmed_at || !session || user.id !== authUserId.current || session.user.id !== user.id) {
+        throw new Error("Your signed-in account changed or expired. Sign in again and return to registration; no application was submitted.");
+      }
       const response = await fetch("/api/register", {
         method: "POST",
-        headers,
-        body: JSON.stringify({
-          full_name: fullName,
-          email: userEmail,
-          phone: account.phone || account.whatsapp,
-          whatsapp: account.whatsapp || account.phone,
-          password: session ? undefined : account.password,
-          business: {
-            trading_name: biz.trading_name,
-            area: biz.area,
-            hourly_rate: biz.hourly_rate,
-            specialties: biz.specialties,
-            is_emergency: biz.is_emergency,
-            google_calendar_url: biz.google_calendar_url,
-            google_place_id: biz.google_place_id,
-            pirb_number: biz.pirb_number,
-          },
-        }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ full_name: account.full_name.trim(), email: user.email, phone: account.phone, whatsapp: account.whatsapp, business: biz }),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "Registration failed. Please try again.");
-
+      if (!response.ok || !data.success || typeof data.plumberId !== "string") throw new Error(data.error || "Registration could not be confirmed. Check your dashboard before retrying.");
+      try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* Optional local draft. */ }
       const allFiles: { file: File; type: string; certName?: string }[] = [];
       for (const file of pirbCert) allFiles.push({ file: file.file, type: "cert", certName: "PIRB Certificate" });
       for (const file of otherCerts) allFiles.push({ file: file.file, type: "cert", certName: file.file.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " ") });
       for (const file of profilePhoto) allFiles.push({ file: file.file, type: "profile_photo" });
       for (const file of workPhotos) allFiles.push({ file: file.file, type: "photo" });
-
-      if (allFiles.length > 0 && data.plumberId && data.uploadToken) {
-        for (let index = 0; index < allFiles.length; index++) {
-          setUploadProgress(`Uploading files (${index + 1}/${allFiles.length})...`);
+      const report = { total: allFiles.length, confirmed: 0, uncertain: [] as string[], warnings: [] as string[] };
+      for (let index = 0; index < allFiles.length; index++) {
+        const item = allFiles[index];
+        setUploadProgress(`Uploading files (${index + 1}/${allFiles.length})…`);
+        try {
+          const { data: { session: uploadSession } } = await supabase.auth.getSession();
+          if (!uploadSession || uploadSession.user.id !== user.id) throw new Error("Session changed");
           const formData = new FormData();
-          formData.append("file", allFiles[index].file);
-          formData.append("type", allFiles[index].type);
+          formData.append("file", item.file);
+          formData.append("type", item.type);
           formData.append("plumber_id", data.plumberId);
-          formData.append("upload_token", data.uploadToken);
-          if (allFiles[index].certName) formData.append("cert_name", allFiles[index].certName!);
-          const uploadHeaders: Record<string, string> = {};
-          if (session?.access_token) uploadHeaders.Authorization = `Bearer ${session.access_token}`;
-          const upload = await fetch("/api/upload", { method: "POST", headers: uploadHeaders, body: formData });
-          if (!upload.ok) {
-            console.warn(`Upload ${index + 1} could not be completed`);
-          }
-        }
+          if (item.certName) formData.append("cert_name", item.certName);
+          const upload = await fetch("/api/upload", { method: "POST", headers: { Authorization: `Bearer ${uploadSession.access_token}` }, body: formData });
+          const result = await upload.json().catch(() => ({}));
+          if (!upload.ok || result.success !== true) throw new Error("Upload not confirmed");
+          report.confirmed++;
+          if (typeof result.warning === "string") report.warnings.push(`${item.file.name}: ${result.warning}`);
+        } catch { report.uncertain.push(item.file.name); }
       }
-
-      setUploadProgress(null);
+      setUploadReport(report);
       setStep(4);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
+      setError(err instanceof Error ? err.message : "Network error. Check your dashboard before retrying registration.");
+    } finally { setUploadProgress(null); inFlight.current = false; setSubmitting(false); }
   }
 
   const stepTitle = ["Account details", "Business info", "Credentials & photos", ""][step - 1];
+
+  if (authChecking) return <p role="status" className="text-sm text-gray-600">Checking your session…</p>;
+  if (confirmationEmail) return (
+    <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 p-6">
+      <h2 className="font-display text-xl font-bold">Confirm your email, then continue</h2>
+      <p className="mt-3 text-sm leading-relaxed">Check <strong>{confirmationEmail}</strong> for a confirmation link. It returns to registration. If you already have an account, sign in instead.</p>
+      <p className="mt-3 text-sm leading-relaxed">No business application or files have been submitted yet. A same-tab draft may restore your details for up to one hour; otherwise re-enter them. Passwords and files are not saved in that draft.</p>
+      <a href="/login?next=%2Fregister" className="btn-primary mt-4">Sign in and continue registration</a>
+    </div>
+  );
 
   return (
     <>
@@ -243,11 +281,11 @@ export function RegisterWizard() {
         <div className="bg-green-50 border border-green-200 rounded-xl p-5 text-center">
           <div className="text-3xl mb-2">✓</div>
           <p className="font-semibold text-green-800">Signed in as {loggedInEmail}</p>
-          <p className="text-sm text-green-700 mt-1">Click Continue to set up your business profile.</p>
+          <p className="text-sm text-green-700 mt-1">Check your name and business contact numbers below before continuing. Your account role will not be changed.</p>
         </div>
       )}
 
-      {step === 1 && !loggedInEmail && (
+      {step === 1 && (
         <div className="space-y-3">
           <Field label="Full name">
             <input
@@ -264,6 +302,9 @@ export function RegisterWizard() {
                 type="email"
                 required
                 value={account.email}
+                disabled={Boolean(loggedInEmail)}
+                autoComplete="email"
+                maxLength={200}
                 onChange={(e) => setAccount({ ...account, email: e.target.value })}
                 className="input"
                 placeholder="you@example.com"
@@ -291,26 +332,15 @@ export function RegisterWizard() {
               placeholder="082 123 4567"
             />
           </Field>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Password">
-              <input
-                type="password"
-                required
-                value={account.password}
-                onChange={(e) => setAccount({ ...account, password: e.target.value })}
-                className="input"
-              />
-            </Field>
-            <Field label="Confirm password">
-              <input
-                type="password"
-                required
-                value={account.confirm}
-                onChange={(e) => setAccount({ ...account, confirm: e.target.value })}
-                className="input"
-              />
-            </Field>
-          </div>
+          {!loggedInEmail && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Password"><input type="password" required minLength={8} maxLength={128} autoComplete="new-password" value={account.password} onChange={(e) => setAccount({ ...account, password: e.target.value })} className="input" /></Field>
+                <Field label="Confirm password"><input type="password" required minLength={8} maxLength={128} autoComplete="new-password" value={account.confirm} onChange={(e) => setAccount({ ...account, confirm: e.target.value })} className="input" /></Field>
+              </div>
+              <p className="text-xs text-gray-600">Email confirmation comes before the business application. Already registered? <a href="/login?next=%2Fregister" className="font-semibold text-brand underline">Sign in to continue</a>.</p>
+            </>
+          )}
         </div>
       )}
 
@@ -445,7 +475,7 @@ export function RegisterWizard() {
           <FileDrop
             label="PIRB certificate (PDF or image)"
             icon="📜"
-            accept="image/*,.pdf"
+            accept="image/jpeg,image/png,image/webp,.pdf"
             files={pirbCert}
             onFilesChange={setPirbCert}
             maxFiles={1}
@@ -453,7 +483,7 @@ export function RegisterWizard() {
           <FileDrop
             label="Additional certifications"
             icon="📂"
-            accept="image/*,.pdf"
+            accept="image/jpeg,image/png,image/webp,.pdf"
             files={otherCerts}
             onFilesChange={setOtherCerts}
             multiple
@@ -463,7 +493,7 @@ export function RegisterWizard() {
           <FileDrop
             label="Profile photo"
             icon="👤"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp"
             files={profilePhoto}
             onFilesChange={setProfilePhoto}
             maxFiles={1}
@@ -471,7 +501,7 @@ export function RegisterWizard() {
           <FileDrop
             label="Work photos"
             icon="📸"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp"
             files={workPhotos}
             onFilesChange={setWorkPhotos}
             multiple
@@ -492,13 +522,22 @@ export function RegisterWizard() {
             Our team will review your application and verify your credentials.
           </p>
 
+          {uploadReport && (
+            <div role="status" className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left text-sm">
+              <p><strong>Files confirmed attached: {uploadReport.confirmed} of {uploadReport.total}.</strong></p>
+              {uploadReport.total === 0 && <p className="mt-2">No files were selected. You can add credentials and photos from your dashboard.</p>}
+              {uploadReport.uncertain.length > 0 && <><p className="mt-2">These uploads were not confirmed: {uploadReport.uncertain.join(", ")}.</p><p className="mt-2">The application is saved. Check your uploads before retrying any files; a lost response does not prove a file was not stored.</p></>}
+              {uploadReport.warnings.map((warning, index) => <p className="mt-2" key={index}>{warning}</p>)}
+              <a href="/dashboard/uploads" className="mt-3 inline-block font-semibold text-brand underline">Check or finish uploads</a>
+            </div>
+          )}
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 max-w-md mx-auto mb-6 text-left">
             <div className="flex gap-3 items-center mb-1">
               <span className="text-2xl">⏳</span>
               <strong className="text-amber-900">Under review</strong>
             </div>
             <p className="text-sm text-amber-800">
-              We&apos;ll review the business details and any supplied evidence before the profile goes live. You&apos;ll receive an email when the review is complete.
+              We&apos;ll review the business details and any supplied evidence before the profile goes live. The profile remains offline until approved; check your dashboard for its status.
             </p>
           </div>
 
@@ -513,43 +552,6 @@ export function RegisterWizard() {
         </div>
       )}
 
-      {step === 4 && !loggedInEmail && (
-        <div className="text-center py-6">
-          <div className="w-20 h-20 rounded-full bg-brand-light text-brand flex items-center justify-center text-4xl mx-auto mb-6">
-            ✉️
-          </div>
-          <h2 className="font-display text-2xl mb-2">Check your email!</h2>
-          <p className="text-gray-600 mb-6 max-w-md mx-auto">
-            We&apos;ve sent a confirmation link to <strong>{account.email}</strong>. Click the link in the email to activate your account.
-          </p>
-
-          <div className="bg-brand-light rounded-xl p-5 max-w-md mx-auto mb-6 text-left">
-            <div className="flex gap-3 items-center mb-1">
-              <span className="text-2xl">📋</span>
-              <strong>What happens next</strong>
-            </div>
-            <div className="text-sm text-gray-700 space-y-2">
-              <div>1. 📧 <strong>Confirm your email</strong> — click the link we just sent</div>
-              <div>2. 🔑 <strong>Log in</strong> — use your email &amp; password</div>
-              <div>3. ⏳ <strong>Admin review</strong> — we review the business and supplied evidence</div>
-              <div>4. 🚀 <strong>Go live</strong> — your profile appears on the directory</div>
-            </div>
-          </div>
-
-          <p className="text-xs text-gray-500 mb-4">
-            Didn&apos;t get the email? Check your spam folder or try registering again.
-          </p>
-
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <button onClick={() => router.push("/login")} className="btn-primary">
-              Go to login →
-            </button>
-            <button onClick={() => router.push("/")} className="btn-secondary">
-              Back to directory
-            </button>
-          </div>
-        </div>
-      )}
 
       {step < 4 && (
         <>
@@ -570,6 +572,7 @@ export function RegisterWizard() {
                 setError(null);
                 setStep(step - 1);
               }}
+              disabled={submitting}
               className={`btn-secondary ${step === 1 ? "invisible" : ""}`}
             >
               ← Back
@@ -637,17 +640,21 @@ function FileDrop({
   onFilesChange: (files: FileWithPreview[]) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
 
   function handleSelect(selected: FileList | null) {
     if (!selected) return;
-
-    const newFiles: FileWithPreview[] = Array.from(selected)
-      .slice(0, maxFiles - files.length)
-      .filter((f) => f.size <= 10 * 1024 * 1024) // 10MB limit
-      .map((f) => ({
-        file: f,
-        preview: f.type.startsWith("image/") ? URL.createObjectURL(f) : "",
-      }));
+    const candidates = Array.from(selected);
+    const supported = ["image/jpeg", "image/png", "image/webp", ...(accept?.includes(".pdf") ? ["application/pdf"] : [])];
+    const rejected = candidates.filter((file) => file.size <= 0 || file.size > 10 * 1024 * 1024 || !supported.includes(file.type));
+    const available = multiple ? maxFiles - files.length : 1;
+    setFileError(rejected.length ? `Not selected: ${rejected.map((file) => file.name).join(", ")}. Use supported files smaller than 10 MB.`
+      : candidates.length > available ? `Only ${available} more file(s) can be selected here.` : null);
+    const newFiles: FileWithPreview[] = candidates
+      .filter((file) => !rejected.includes(file))
+      .slice(0, available)
+      .map((file) => ({ file, preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : "" }));
+    if (!newFiles.length) { if (inputRef.current) inputRef.current.value = ""; return; }
 
     if (multiple) {
       onFilesChange([...files, ...newFiles].slice(0, maxFiles));
@@ -671,6 +678,7 @@ function FileDrop({
   return (
     <div>
       <div className="text-xs font-semibold text-gray-700 mb-1">{label}</div>
+      {fileError && <p role="alert" className="mb-2 text-xs text-red-700">{fileError}</p>}
 
       {/* File previews */}
       {files.length > 0 && (

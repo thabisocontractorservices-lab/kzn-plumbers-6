@@ -13,7 +13,7 @@ describe("technical SEO safeguards", () => {
   });
 
   it("publishes split sitemaps for priority page types", () => {
-    const index = read("app/sitemap.xml/route.ts");
+    const index = read("lib/directory-sitemaps.ts");
     for (const type of ["core", "regions", "services", "profiles", "content", "blog"]) {
       expect(index).toContain(`"${type}"`);
     }
@@ -38,13 +38,14 @@ describe("technical SEO safeguards", () => {
     expect(proxy).toContain('process.env.VERCEL_ENV === "production"');
   });
 
-  it("keeps staging registration callbacks on the active preview host", () => {
-    expect(read("app/api/register/route.ts")).toContain("request.nextUrl.origin");
+  it("uses confirmed sessions for registration rather than arbitrary email lookup", () => {
+    expect(read("app/api/register/route.ts")).toContain("requireUser");
+    expect(read("components/ClaimFlow.tsx")).not.toContain("/api/register/homeowner");
   });
 
   it("bounds public result payloads", () => {
-    expect(read("app/page.tsx")).toContain(".range(0, 11)");
+    expect(read("lib/directory-data.ts")).toContain("Math.min(24");
     expect(read("app/api/plumbers/route.ts")).toContain(".max(24)");
-    expect(read("app/all-plumbers/page.tsx")).toContain("const limit = 24");
+    expect(read("app/page.tsx")).toContain("searchPublicPlumbers");
   });
 });

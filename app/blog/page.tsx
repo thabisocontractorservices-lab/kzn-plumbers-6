@@ -1,36 +1,27 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getPublicSupabase } from "@/lib/supabase/public";
+import { notFound } from "next/navigation";
+import { getArticleList } from "@/lib/directory-editorial";
+import { parseDirectorySearch } from "@/lib/directory";
 
-export const revalidate = 3600; // refresh hourly
+export const revalidate = 300;
+type Search = Promise<Record<string, string | string[] | undefined>>;
 
-export const metadata: Metadata = {
-  title: "Plumbing Blog — KZN Plumbers Directory",
-  description:
-    "Practical, sourced plumbing guidance for KwaZulu-Natal homeowners, including maintenance, compliance and local service information.",
-  alternates: { canonical: "/blog" },
-};
+export async function generateMetadata({ searchParams }: { searchParams: Search }): Promise<Metadata> {
+  const { page } = parseDirectorySearch(await searchParams);
+  return {
+    title: `Plumbing Blog${page > 1 ? ` — Page ${page}` : ""} | KZN Plumbers Directory`,
+    description: "Plumbing guidance for KwaZulu-Natal homeowners, including maintenance, compliance and local service information.",
+    alternates: { canonical: page > 1 ? `/blog?page=${page}` : "/blog" },
+  };
+}
 
-type Article = {
-  id: string;
-  title: string;
-  slug: string;
-  meta_description: string | null;
-  keywords: string[] | null;
-  publish_date: string;
-  word_count: number | null;
-};
-
-export default async function BlogPage() {
-  const supabase = getPublicSupabase();
-  const { data: articles } = supabase
-    ? await supabase
-        .from("articles")
-        .select("id, title, slug, meta_description, keywords, publish_date, word_count")
-        .order("publish_date", { ascending: false })
-    : { data: [] as Article[] };
-
-  const posts = (articles ?? []) as Article[];
+export default async function BlogPage({ searchParams }: { searchParams: Search }) {
+  const { page } = parseDirectorySearch(await searchParams);
+  const limit = 12;
+  const { articles: posts, total } = await getArticleList(page, limit);
+  const pages = Math.max(1, Math.ceil(total / limit));
+  if (page > pages) notFound();
 
   return (
     <>
@@ -41,7 +32,7 @@ export default async function BlogPage() {
             Plumbing Blog
           </h1>
           <p className="text-sm sm:text-lg opacity-90 max-w-xl mx-auto">
-            Practical, sourced guidance for KwaZulu-Natal homeowners—without recycled town-name pages.
+            Plumbing guidance and local information for KwaZulu-Natal homeowners.
           </p>
         </div>
       </section>
@@ -50,9 +41,8 @@ export default async function BlogPage() {
       <section className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         {posts.length === 0 ? (
           <div className="text-center py-16">
-            <div className="text-5xl mb-4">📝</div>
             <h2 className="font-display text-2xl font-bold mb-2">
-              Coming soon
+              No published articles yet
             </h2>
             <p className="text-gray-600">
               We&apos;re working on helpful plumbing guides and local news. Check back soon!
@@ -115,6 +105,11 @@ export default async function BlogPage() {
             ))}
           </div>
         )}
+        {pages > 1 && <nav aria-label="Blog pages" className="mt-8 flex items-center justify-between gap-4">
+          {page > 1 ? <Link href={page === 2 ? "/blog" : `/blog?page=${page - 1}`} className="btn-secondary">Previous</Link> : <span />}
+          <span className="text-sm text-slate-600">Page {page} of {pages}</span>
+          {page < pages ? <Link href={`/blog?page=${page + 1}`} className="btn-secondary">Next</Link> : <span />}
+        </nav>}
       </section>
     </>
   );

@@ -1,11 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import "server-only";
+import { randomUUID } from "node:crypto";
+import { NextRequest } from "next/server";
 import { z } from "zod";
 import { notifyNewRegistration } from "@/lib/email";
 import { KZN_AREAS, SPECIALTIES, formatWhatsApp, isValidSAPhone } from "@/lib/utils";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { createUploadToken } from "@/lib/upload-token";
-import { SITE_URL } from "@/lib/site";
+import { AccessError, privateJson, requireSameOrigin, requireUser } from "@/lib/server-access";
+import { authFlowFailure as accessFailure, missingAuthFlowColumn, readAuthFlowJson } from "@/lib/auth-flow-input";
+import { ensureAuthFlowProfile } from "@/lib/auth-flow-records";
 
 const BusinessSchema = z.object({
   trading_name: z.string().trim().min(2).max(160),
@@ -13,7 +15,10 @@ const BusinessSchema = z.object({
   hourly_rate: z.coerce.number().int().min(0).max(100000).nullable().optional(),
   specialties: z.array(z.enum(SPECIALTIES)).min(1).max(SPECIALTIES.length),
   is_emergency: z.boolean().default(false),
-  google_calendar_url: z.string().trim().url().max(500).or(z.literal("")).optional(),
+  google_calendar_url: z.string().trim().max(500).refine((value) => {
+    if (!value) return true;
+    try { const url = new URL(value); return url.protocol === "https:" && url.hostname === "calendar.google.com" && !url.username && !url.password; } catch { return false; }
+  }, "Use a Google Calendar HTTPS booking URL.").optional(),
   google_place_id: z.string().trim().max(250).optional(),
   pirb_number: z.string().trim().max(80).optional(),
 });
@@ -21,131 +26,76 @@ const BusinessSchema = z.object({
 const Schema = z.object({
   full_name: z.string().trim().min(2).max(120),
   email: z.string().trim().email().max(200),
-  phone: z.string().trim().refine(isValidSAPhone, "Invalid South African cellphone number"),
-  whatsapp: z.string().trim().refine(isValidSAPhone, "Invalid South African WhatsApp number"),
-  password: z.string().min(8).max(128).optional(),
+  phone: z.string().trim().max(30).regex(/^[+\d\s()-]+$/).refine(isValidSAPhone, "Invalid South African cellphone number"),
+  whatsapp: z.string().trim().max(30).regex(/^[+\d\s()-]+$/).refine(isValidSAPhone, "Invalid South African WhatsApp number"),
   business: BusinessSchema,
 });
 
 export async function POST(request: NextRequest) {
   try {
-    const origin = request.headers.get("origin");
-    if (origin && process.env.NODE_ENV === "production") {
-      const originHost = new URL(origin).host;
-      const requestHost = request.headers.get("host");
-      if (originHost !== requestHost && originHost !== new URL(SITE_URL).host) {
-        return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
-      }
-    }
-    if (Number(request.headers.get("content-length") || 0) > 16384) {
-      return NextResponse.json({ error: "Registration request is too large" }, { status: 413 });
-    }
-
-    const parsed = Schema.safeParse(await request.json());
-    if (!parsed.success) {
-      return NextResponse.json({ error: "Check the registration details", issues: parsed.error.flatten().fieldErrors }, { status: 400 });
-    }
-
-    const admin = getSupabaseAdmin();
+    requireSameOrigin(request);
+    // Signup happens through the cookie-aware browser client, then email confirmation.
+    // This endpoint only creates a business for the verified, signed-in identity.
+    const user = await requireUser(request);
+    const parsed = Schema.safeParse(await readAuthFlowJson(request, 16384));
+    if (!parsed.success) return privateJson({ error: "Check the registration details.", issues: parsed.error.flatten().fieldErrors }, 400);
     const input = parsed.data;
-    const authHeader = request.headers.get("authorization");
-    let userId: string;
-    let needsEmailConfirmation = false;
-
-    if (authHeader?.startsWith("Bearer ")) {
-      const { data: { user }, error } = await admin.auth.getUser(authHeader.slice(7));
-      if (error || !user) return NextResponse.json({ error: "Invalid session" }, { status: 401 });
-      userId = user.id;
-      if (user.email && user.email.toLowerCase() !== input.email.toLowerCase()) {
-        return NextResponse.json({ error: "Use the email address for your signed-in account" }, { status: 400 });
-      }
-    } else {
-      if (!input.password) return NextResponse.json({ error: "Password is required" }, { status: 400 });
-      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-      if (!url || !publishableKey) throw new Error("Supabase public credentials are unavailable");
-      const authClient = createClient(url, publishableKey, { auth: { persistSession: false, autoRefreshToken: false } });
-      const { data, error } = await authClient.auth.signUp({
-        email: input.email.toLowerCase(),
-        password: input.password,
-        options: {
-          emailRedirectTo: `${request.nextUrl.origin}/auth/callback?next=/dashboard`,
-          data: { full_name: input.full_name, role: "plumber" },
-        },
-      });
-      if (error) {
-        const duplicate = /already|registered|exists/i.test(error.message);
-        return NextResponse.json({ error: duplicate ? "An account with this email already exists. Sign in before adding a business." : "Account creation failed. Please try again." }, { status: duplicate ? 409 : 400 });
-      }
-      if (!data.user || data.user.identities?.length === 0) {
-        return NextResponse.json({ error: "An account with this email already exists. Sign in before adding a business." }, { status: 409 });
-      }
-      userId = data.user.id;
-      needsEmailConfirmation = !data.session;
+    if (!user.email || input.email.toLowerCase() !== user.email.toLowerCase()) {
+      return privateJson({ error: "Use the email address for your signed-in account." }, 400);
     }
+    const admin = getSupabaseAdmin();
+    const existing = await admin.from("plumbers").select("id").eq("profile_id", user.id).limit(1);
+    if (existing.error) throw new AccessError("Cannot check your business application right now.", 503);
+    if (existing.data?.length) return privateJson({ error: "This account already has a business profile. Continue from your dashboard.", plumberId: existing.data[0].id }, 409);
 
-    const { data: existing } = await admin.from("plumbers").select("id").eq("profile_id", userId).maybeSingle();
-    if (existing) return NextResponse.json({ error: "This account already has a business profile", plumberId: existing.id }, { status: 409 });
-
-    const profilePayload = {
-      id: userId,
-      full_name: input.full_name,
-      email: input.email.toLowerCase(),
-      role: "plumber",
-      phone_number: input.phone,
-      whatsapp_number: input.whatsapp,
+    await ensureAuthFlowProfile(user, input.full_name, "plumber");
+    // No role appears in an UPDATE: existing homeowner/plumber/admin roles survive,
+    // including a concurrent administrator promotion. Only this verified id is changed.
+    const profilePayload: Record<string, unknown> = {
+      full_name: input.full_name, email: user.email.toLowerCase(),
+      phone_number: formatWhatsApp(input.phone), whatsapp_number: formatWhatsApp(input.whatsapp),
     };
-    const profileResult = await admin.from("profiles").upsert(profilePayload, { onConflict: "id" });
-    if (profileResult.error) {
-      const fallbackProfile = { id: userId, full_name: input.full_name, email: input.email.toLowerCase(), role: "plumber", phone: input.phone, whatsapp_number: input.whatsapp };
-      const fallback = await admin.from("profiles").upsert(fallbackProfile, { onConflict: "id" });
-      if (fallback.error) throw fallback.error;
+    let profileResult = await admin.from("profiles").update(profilePayload).eq("id", user.id);
+    if (missingAuthFlowColumn(profileResult.error, "profiles", ["phone_number"])) {
+      delete profilePayload.phone_number;
+      profilePayload.phone = formatWhatsApp(input.phone);
+      profileResult = await admin.from("profiles").update(profilePayload).eq("id", user.id);
     }
+    if (profileResult.error) throw new AccessError("Your contact details could not be saved. The business application has not been submitted.", 503);
 
-    const baseBusiness = {
-      profile_id: userId,
+    const id = randomUUID();
+    const businessPayload: Record<string, unknown> = {
+      id, profile_id: user.id,
       trading_name: input.business.trading_name,
+      // Random suffix avoids same-name slug races without a new index or schema.
+      slug: `${input.business.trading_name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 130) || "business"}-${id.slice(0, 8)}`,
       area: input.business.area,
       hourly_rate: input.business.hourly_rate || null,
-      specialties: input.business.specialties,
+      specialties: [...new Set(input.business.specialties)],
       is_emergency: input.business.is_emergency,
       google_calendar_url: input.business.google_calendar_url || null,
       google_place_id: input.business.google_place_id || null,
       pirb_number: input.business.pirb_number || null,
       whatsapp_number: formatWhatsApp(input.whatsapp),
-      is_certified: false,
-      is_verified: false,
+      is_certified: false, is_verified: false, record_status: "pending",
+      verification_state: "business_claimed", accepts_new_work: true,
       availability_status: "available",
     };
-    const enrichedBusiness = { ...baseBusiness, verification_state: "business_claimed", accepts_new_work: true };
-    let insert = await admin.from("plumbers").insert(enrichedBusiness).select("id").single();
-    if (insert.error && /column|schema cache/i.test(insert.error.message)) {
-      insert = await admin.from("plumbers").insert(baseBusiness).select("id").single();
+    const optional = ["record_status", "verification_state", "accepts_new_work"];
+    let inserted = await admin.from("plumbers").insert(businessPayload).select("id").single();
+    for (let attempt = 0; inserted.error && attempt < optional.length; attempt++) {
+      const missing = missingAuthFlowColumn(inserted.error, "plumbers", optional);
+      if (!missing || !(missing in businessPayload)) break;
+      delete businessPayload[missing];
+      inserted = await admin.from("plumbers").insert(businessPayload).select("id").single();
     }
-    if (insert.error || !insert.data) {
-      console.error("[register] Business insert failed:", insert.error?.message);
-      return NextResponse.json({ error: "The business profile could not be created" }, { status: 503 });
+    if (inserted.error?.code === "23505") {
+      const raced = await admin.from("plumbers").select("id").eq("profile_id", user.id).limit(1);
+      if (!raced.error && raced.data?.length) return privateJson({ error: "This account already has a business profile. Continue from your dashboard.", plumberId: raced.data[0].id }, 409);
     }
+    if (inserted.error || !inserted.data) throw new AccessError("Contact details were saved, but the business application could not be confirmed. Check your dashboard before retrying.", 503);
 
-    void notifyNewRegistration({
-      tradingName: input.business.trading_name,
-      area: input.business.area,
-      email: input.email,
-      phone: input.phone,
-      specialties: input.business.specialties,
-    }).catch(() => {});
-
-    return NextResponse.json({
-      success: true,
-      plumberId: insert.data.id,
-      uploadToken: createUploadToken(insert.data.id),
-      needsEmailConfirmation,
-      message: needsEmailConfirmation
-        ? "Application received. Confirm your email before signing in."
-        : "Application received for review.",
-    }, { status: 201 });
-  } catch (error) {
-    console.error("[register] Unexpected error:", error);
-    return NextResponse.json({ error: "Registration could not be completed" }, { status: 500 });
-  }
+    void notifyNewRegistration({ tradingName: input.business.trading_name, area: input.business.area, email: user.email, phone: input.phone, specialties: input.business.specialties }).catch(() => {});
+    return privateJson({ success: true, plumberId: inserted.data.id, status: "pending", message: "Application saved for review. Files are uploaded separately." }, 201);
+  } catch (error) { return accessFailure(error); }
 }

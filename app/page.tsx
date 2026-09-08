@@ -2,12 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, BadgeCheck, Building2, MapPin, ShieldQuestion, Wrench } from "lucide-react";
 import { DirectorySearch } from "@/components/DirectorySearch";
-import { DIRECTORY_SERVICES, getAreaConfig, getServiceConfig } from "@/lib/directory";
+import { DIRECTORY_SERVICES, parseDirectorySearch } from "@/lib/directory";
 import { REGIONS } from "@/lib/regions";
 import { safeJsonLd } from "@/lib/json-ld";
 import { absoluteUrl, SITE_NAME, SITE_URL } from "@/lib/site";
-import { getPublicSupabase } from "@/lib/supabase/public";
-import type { Plumber } from "@/types/database";
+import { getPublicDirectoryStats, searchPublicPlumbers } from "@/lib/directory-data";
 
 export const revalidate = 300;
 
@@ -29,103 +28,18 @@ export const metadata: Metadata = {
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-type DirectoryPlumber = Plumber & {
-  verification_state?: "credential_verified" | "business_claimed" | "directory_record" | null;
-  credential_verified_at?: string | null;
-  verification_expires_at?: string | null;
-  last_checked_at?: string | null;
-  response_time_minutes?: number | null;
-  accepts_new_work?: boolean | null;
-};
-
-function firstParam(value: string | string[] | undefined): string {
-  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
-}
-
 export default async function HomePage({ searchParams }: { searchParams: SearchParams }) {
-  const raw = await searchParams;
-  const q = firstParam(raw.q).slice(0, 80);
-  const area = firstParam(raw.area);
-  const service = firstParam(raw.service);
-  const filter = firstParam(raw.filter) || "all";
-  const areaConfig = getAreaConfig(area);
-  const serviceConfig = getServiceConfig(service);
-  const supabase = getPublicSupabase();
-
-  let plumbers: DirectoryPlumber[] = [];
-  let total = 0;
-  let totalRecords = 0;
-  let credentialChecked = 0;
-  let claimedBusinesses = 0;
-
-  if (supabase) {
-    const richSelect = `
-      id, profile_id, trading_name, slug, area, hourly_rate, specialties,
-      is_emergency, is_certified, is_verified, availability_status,
-      google_rating, google_review_count, whatsapp_number, pirb_number,
-      verification_state, verification_rank, credential_verified_at, verification_expires_at,
-      last_checked_at, response_time_minutes, accepts_new_work,
-      photos(photo_url, is_profile_photo), certifications(id, cert_name)
-    `;
-
-    let query = supabase.from("plumbers").select(richSelect, { count: "exact" }).eq("is_verified", true);
-    if (areaConfig) query = query.in("area", [...areaConfig.dbAreas]);
-    if (serviceConfig) query = query.contains("specialties", [serviceConfig.dbValue]);
-    if (filter === "credential") query = query.eq("verification_state", "credential_verified");
-    if (filter === "claimed") query = query.not("profile_id", "is", null);
-    if (filter === "available") query = query.eq("availability_status", "available").eq("accepts_new_work", true);
-    if (filter === "emergency") query = query.eq("is_emergency", true);
-    if (q.trim()) {
-      const safe = q.replace(/[^a-zA-Z0-9\s&-]/g, " ").replace(/\s+/g, " ").trim();
-      if (safe) query = query.or(`trading_name.ilike.%${safe}%,area.ilike.%${safe}%,about.ilike.%${safe}%`);
-    }
-
-    const [result, recordsResult, credentialResult, claimedResult] = await Promise.all([
-      query
-        .order("verification_rank", { ascending: true })
-        .order("profile_id", { ascending: false, nullsFirst: false })
-        .order("google_rating", { ascending: false, nullsFirst: false })
-        .range(0, 11),
-      supabase.from("plumbers").select("id", { count: "exact", head: true }).eq("is_verified", true),
-      supabase.from("plumbers").select("id", { count: "exact", head: true }).eq("verification_state", "credential_verified").eq("is_verified", true),
-      supabase.from("plumbers").select("id", { count: "exact", head: true }).not("profile_id", "is", null).eq("is_verified", true),
-    ]);
-
-    if (!result.error) {
-      plumbers = (result.data ?? []) as unknown as DirectoryPlumber[];
-      total = result.count ?? 0;
-      totalRecords = recordsResult.count ?? total;
-      credentialChecked = credentialResult.count ?? 0;
-      claimedBusinesses = claimedResult.count ?? 0;
-    } else {
-      let fallback = supabase
-        .from("plumbers")
-        .select(
-          "id, profile_id, trading_name, slug, area, hourly_rate, specialties, is_emergency, is_certified, is_verified, availability_status, google_rating, google_review_count, whatsapp_number, pirb_number, photos(photo_url, is_profile_photo), certifications(id, cert_name)",
-          { count: "exact" },
-        )
-        .eq("is_verified", true);
-      if (areaConfig) fallback = fallback.in("area", [...areaConfig.dbAreas]);
-      if (serviceConfig) fallback = fallback.contains("specialties", [serviceConfig.dbValue]);
-      if (filter === "credential") fallback = fallback.eq("is_certified", true).not("pirb_number", "is", null);
-      if (filter === "claimed") fallback = fallback.not("profile_id", "is", null);
-      if (filter === "available") fallback = fallback.eq("availability_status", "available");
-      if (filter === "emergency") fallback = fallback.eq("is_emergency", true);
-      if (q.trim()) {
-        const safe = q.replace(/[^a-zA-Z0-9\s&-]/g, " ").replace(/\s+/g, " ").trim();
-        if (safe) fallback = fallback.or(`trading_name.ilike.%${safe}%,area.ilike.%${safe}%`);
-      }
-      const retry = await fallback
-        .order("profile_id", { ascending: false, nullsFirst: false })
-        .order("google_rating", { ascending: false, nullsFirst: false })
-        .range(0, 11);
-      plumbers = (retry.data ?? []) as unknown as DirectoryPlumber[];
-      total = retry.count ?? 0;
-      totalRecords = recordsResult.count ?? total;
-      claimedBusinesses = claimedResult.count ?? 0;
-      credentialChecked = 0;
-    }
-  }
+  const search = parseDirectorySearch(await searchParams);
+  const [directory, stats] = await Promise.allSettled([
+    searchPublicPlumbers(search),
+    getPublicDirectoryStats(),
+  ]);
+  const initialResult = directory.status === "fulfilled" ? directory.value : null;
+  const initialError = directory.status === "rejected"
+    ? "The directory could not load. This is a read error, not a report of zero matching businesses. Please try again shortly."
+    : null;
+  const totalRecords = stats.status === "fulfilled" ? stats.value.records : null;
+  const claimedBusinesses = stats.status === "fulfilled" ? stats.value.claimed : null;
 
   const structuredData = [
     {
@@ -175,22 +89,19 @@ export default async function HomePage({ searchParams }: { searchParams: SearchP
                 Search by job, area and urgency. See whether a credential was checked, a business claimed its profile, or a listing is an unclaimed directory record—before you make contact.
               </p>
             </div>
-            <div className="grid grid-cols-3 gap-3 rounded-2xl border border-white/15 bg-white/8 p-4 backdrop-blur">
-              <HeroStat value={totalRecords ? totalRecords.toLocaleString() : "—"} label="Directory records" />
-              <HeroStat value={credentialChecked ? credentialChecked.toLocaleString() : "New"} label="Credential state" />
-              <HeroStat value={claimedBusinesses ? claimedBusinesses.toLocaleString() : "—"} label="Claimed profiles" />
+            <div className="grid grid-cols-2 gap-3 rounded-2xl border border-white/15 bg-white/8 p-4 backdrop-blur">
+              <HeroStat value={totalRecords !== null ? totalRecords.toLocaleString() : "—"} label="Directory records" />
+              <HeroStat value={claimedBusinesses !== null ? claimedBusinesses.toLocaleString() : "—"} label="Claimed profiles" />
             </div>
           </div>
         </div>
       </section>
 
       <DirectorySearch
-        initialPlumbers={plumbers}
-        initialTotal={total}
-        initialQuery={q}
-        initialArea={area}
-        initialService={service}
-        initialFilter={filter}
+        key={JSON.stringify(search)}
+        initialResult={initialResult}
+        initialSearch={search}
+        initialError={initialError}
       />
 
       <section className="border-y border-slate-200 bg-white px-4 py-14 sm:px-6">
@@ -198,10 +109,10 @@ export default async function HomePage({ searchParams }: { searchParams: SearchP
           <div className="max-w-2xl">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand">Read the label, not the marketing</p>
             <h2 className="mt-2 font-display text-3xl font-bold text-slate-950">Three different trust states</h2>
-            <p className="mt-3 text-slate-600">A claimed listing and a checked professional credential are not the same thing. The redesigned directory keeps them separate.</p>
+            <p className="mt-3 text-slate-600">A claimed listing and a checked professional credential are not the same thing. The directory keeps them separate. Being published is not an endorsement.</p>
           </div>
           <div className="mt-8 grid gap-4 md:grid-cols-3">
-            <TrustCard icon={BadgeCheck} title="Credential verified" text="Registration evidence was checked and the profile carries a review date." tone="emerald" />
+            <TrustCard icon={BadgeCheck} title="Credential verified" text="A recorded evidence source, check date and unexpired review period are required. This is not a workmanship guarantee." tone="emerald" />
             <TrustCard icon={Building2} title="Business claimed" text="The business controls the profile, but its professional credential may still need checking." tone="blue" />
             <TrustCard icon={ShieldQuestion} title="Directory record" text="An unclaimed public record. Contact details and availability should be confirmed directly." tone="slate" />
           </div>

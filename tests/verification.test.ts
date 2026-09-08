@@ -11,7 +11,9 @@ describe("verification states", () => {
   });
 
   it("honours an explicit credential check", () => {
-    expect(getVerificationState({ verification_state: "credential_verified" })).toBe("credential_verified");
+    expect(getVerificationState({ verification_state: "credential_verified" })).toBe("directory_record");
+    const now=Date.parse("2026-09-08T12:00:00Z");
+    expect(getVerificationState({ verification_state:"credential_verified",verification_source_url:"https://example.org/check",credential_verified_at:"2026-09-01T12:00:00Z",verification_expires_at:"2026-10-01T12:00:00Z" },now)).toBe("credential_verified");
     expect(verificationLabel("credential_verified")).toBe("Credential verified");
     expect(verificationDescription("business_claimed")).toContain("Professional registration");
   });

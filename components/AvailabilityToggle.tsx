@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { supabase } from "@/src/supabaseClient";
 
 const STATES = [
   { key: "available", label: "Available", dot: "bg-green-500", active: "bg-green-100 text-green-800" },
@@ -23,7 +22,8 @@ export function AvailabilityToggle({
   const [status, setStatus] = useState<Status>(initial);
   const [confirmed, setConfirmed] = useState(initialConfirmed);
   const [error, setError] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
+  const [pending, startTransition] = useTransition();
+  const [message, setMessage] = useState("");
 
   function set(s: Status) {
     const previous = status;
@@ -32,21 +32,14 @@ export function AvailabilityToggle({
     setConfirmed(s === "available");
     setError(null);
     startTransition(async () => {
-      let result = await supabase
-        .from("plumbers")
-        .update({
-          availability_status: s,
-          accepts_new_work: s === "available",
-          last_checked_at: new Date().toISOString(),
-        })
-        .eq("id", plumberId);
-      if (result.error && /column|schema cache/i.test(result.error.message)) {
-        result = await supabase.from("plumbers").update({ availability_status: s }).eq("id", plumberId);
-      }
-      if (result.error) {
-        setStatus(previous);
-        setConfirmed(previousConfirmed);
-        setError("Status could not be updated.");
+      setMessage("");
+      try {
+        const response=await fetch("/api/dashboard/availability",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({plumber_id:plumberId,status:s})});
+        const result=await response.json();if(!response.ok)throw new Error(result.error||"Status could not update.");
+        setConfirmed(result.confirmed===true);setMessage(result.message);
+      } catch(err) {
+        setStatus(previous);setConfirmed(previousConfirmed);
+        setError(err instanceof Error?err.message:"Status could not be updated.");
       }
     });
   }
@@ -60,6 +53,9 @@ export function AvailabilityToggle({
         {STATES.map((s) => (
           <button
             key={s.key}
+            type="button"
+            disabled={pending}
+            aria-pressed={status===s.key}
             onClick={() => set(s.key)}
             className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
               status === s.key ? s.active : "text-gray-600 hover:bg-gray-50"
@@ -75,6 +71,7 @@ export function AvailabilityToggle({
           ? "Click Available to confirm that you are taking new work."
           : "Availability is time-sensitive. Update it whenever your workload changes."}
       </p>
+      {message && <p role="status" className="mt-2 text-xs text-slate-600">{message}</p>}
       {error && <p role="alert" className="mt-1 text-xs text-red-700">{error}</p>}
     </div>
   );

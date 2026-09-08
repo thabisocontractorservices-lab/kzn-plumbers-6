@@ -4,29 +4,10 @@ import { notFound } from "next/navigation";
 import { sanitizeEditorialHtml } from "@/lib/sanitize";
 import { safeJsonLd } from "@/lib/json-ld";
 import { absoluteUrl, SITE_NAME } from "@/lib/site";
-import { getPublicSupabase } from "@/lib/supabase/public";
+import { getArticle, getArticleList, editorialIndexable, approvedEditorialDisposition } from "@/lib/directory-editorial";
+import { realPastDate } from "@/lib/directory-seo";
 
-export const revalidate = 3600;
-
-type Article = {
-  id: string;
-  title: string;
-  slug: string;
-  meta_title: string | null;
-  meta_description: string | null;
-  body: string;
-  keywords: string[] | null;
-  internal_links: string[] | null;
-  publish_date: string;
-  word_count: number | null;
-};
-
-async function getArticle(slug: string): Promise<Article | null> {
-  const supabase = getPublicSupabase();
-  if (!supabase) return null;
-  const { data } = await supabase.from("articles").select("*").eq("slug", slug).maybeSingle();
-  return data as Article | null;
-}
+export const revalidate = 300;
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
@@ -39,6 +20,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     title,
     description,
     alternates: { canonical },
+    robots: { index: editorialIndexable(article), follow: true },
     openGraph: { title, description, url: absoluteUrl(canonical), siteName: SITE_NAME, type: "article", locale: "en_ZA" },
   };
 }
@@ -47,16 +29,9 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
   const { slug } = await params;
   const article = await getArticle(slug);
   if (!article) notFound();
-  const supabase = getPublicSupabase();
-  const relatedResult = supabase
-    ? await supabase
-        .from("articles")
-        .select("id, title, slug, meta_description, publish_date")
-        .neq("slug", slug)
-        .order("publish_date", { ascending: false })
-        .limit(3)
-    : { data: [] };
-  const related = relatedResult.data ?? [];
+  if (approvedEditorialDisposition(article) === "remove") notFound();
+  const { articles: related } = await getArticleList(1, 3, slug);
+  const modified = realPastDate(article.updated_at);
   const body = sanitizeEditorialHtml(article.body);
   const jsonLd = {
     "@context": "https://schema.org",
@@ -64,7 +39,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
     headline: article.title,
     description: article.meta_description,
     datePublished: article.publish_date,
-    dateModified: article.publish_date,
+    ...(modified ? { dateModified: modified } : {}),
     mainEntityOfPage: absoluteUrl(`/blog/${article.slug}`),
     author: { "@type": "Organization", name: SITE_NAME },
     publisher: { "@type": "Organization", name: SITE_NAME, url: absoluteUrl("/") },

@@ -1,68 +1,26 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound, permanentRedirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { ArrowRight, CalendarDays, MapPin, ShieldCheck } from "lucide-react";
 import { PlumberCard } from "@/components/PlumberCard";
-import { safeJsonLd, safeStoredJsonLd } from "@/lib/json-ld";
+import { safeJsonLd } from "@/lib/json-ld";
+import { realPastDate } from "@/lib/directory-seo";
 import { getPublicPlumbers } from "@/lib/directory-data";
-import { REGIONS } from "@/lib/regions";
+import { guideAreaMatch } from "@/lib/regions";
 import { sanitizeEditorialHtml } from "@/lib/sanitize";
 import { SERVICE_GUIDES } from "@/lib/services";
 import { absoluteUrl, SITE_NAME } from "@/lib/site";
-import { getPublicSupabase } from "@/lib/supabase/public";
+import { getSeoPage as getPage, editorialIndexable, approvedEditorialDisposition } from "@/lib/directory-editorial";
 
-const OFF_SCOPE_SLUGS = new Set([
-  "gas-cape-town",
-  "drain-durbanville",
-  "general-durbanville",
-  "geyser-durbanville",
-]);
-
-type SeoPage = {
-  slug: string;
-  h1: string;
-  meta_title: string;
-  meta_description: string;
-  body_html: string;
-  faq_schema: string | Record<string, unknown> | null;
-  group_name: string | null;
-  city_focus: string | null;
-  updated_at?: string | null;
-  index_status?: "keep" | "rebuild" | "merge" | "redirect" | "noindex" | "remove" | null;
-  redirect_target?: string | null;
-  canonical_target?: string | null;
-};
-
-export const revalidate = 3600;
-
-async function getPage(slug: string): Promise<SeoPage | null> {
-  const supabase = getPublicSupabase();
-  if (!supabase || OFF_SCOPE_SLUGS.has(slug)) return null;
-
-  const rich = await supabase
-    .from("seo_pages")
-    .select("slug, h1, meta_title, meta_description, body_html, faq_schema, group_name, city_focus, updated_at, index_status, redirect_target, canonical_target")
-    .eq("slug", slug)
-    .eq("published", true)
-    .maybeSingle();
-  if (!rich.error) return rich.data as SeoPage | null;
-
-  const fallback = await supabase
-    .from("seo_pages")
-    .select("slug, h1, meta_title, meta_description, body_html, faq_schema, group_name, city_focus")
-    .eq("slug", slug)
-    .eq("published", true)
-    .maybeSingle();
-  return fallback.data as SeoPage | null;
-}
+export const revalidate = 300;
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const page = await getPage(slug);
   if (!page) return { title: "Page not found | KZN Plumbers", robots: { index: false, follow: true } };
 
-  const nonIndexable = ["merge", "redirect", "noindex", "remove"].includes(page.index_status ?? "keep");
-  const canonical = page.canonical_target || `/${slug}`;
+  const nonIndexable = !editorialIndexable(page);
+  const canonical = `/${slug}`;
   return {
     title: page.meta_title,
     description: page.meta_description,
@@ -79,36 +37,27 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   };
 }
 
-export async function generateStaticParams() {
-  const supabase = getPublicSupabase();
-  if (!supabase) return [];
-  const rich = await supabase.from("seo_pages").select("slug").eq("published", true).in("index_status", ["keep", "rebuild"]);
-  const data = rich.error
-    ? (await supabase.from("seo_pages").select("slug").eq("published", true)).data
-    : rich.data;
-  return (data ?? []).filter((page) => !OFF_SCOPE_SLUGS.has(page.slug)).map((page) => ({ slug: page.slug }));
-}
+// Generate historical URLs on demand. Builds do not need to crawl production content.
+export function generateStaticParams() { return []; }
 
 export default async function SeoContentPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const page = await getPage(slug);
   if (!page) notFound();
 
-  if (["merge", "redirect"].includes(page.index_status ?? "keep") && page.redirect_target) {
-    permanentRedirect(normaliseTarget(page.redirect_target));
-  }
-  if (page.index_status === "remove") notFound();
-
-  const region = findRegion(page.city_focus);
+  // No automatic redirects from unvalidated database targets. Existing URLs remain stable.
+  if (approvedEditorialDisposition(page) === "remove") notFound();
+  const areaMatch = guideAreaMatch(page.city_focus);
+  const region = areaMatch?.region ?? null;
   const service = findService(page.group_name, page.h1);
-  const { plumbers } = await getPublicPlumbers({
-    areas: region?.queryAreas,
-    specialty: service?.specialty,
-    limit: 6,
-  });
-  const updated = page.updated_at ? new Date(page.updated_at) : null;
+  const providerResult = areaMatch ? await getPublicPlumbers({
+    areas: areaMatch.areas, specialty: service?.specialty, limit: 6,
+  }) : null;
+  const plumbers = providerResult?.plumbers ?? [];
+  const changed = realPastDate(page.updated_at);
+  const updated = changed ? new Date(changed) : null;
   const body = sanitizeEditorialHtml(page.body_html);
-  const canonical = page.canonical_target || `/${slug}`;
+  const canonical = `/${slug}`;
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -123,14 +72,6 @@ export default async function SeoContentPage({ params }: { params: Promise<{ slu
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />
-      {page.faq_schema && (
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: safeStoredJsonLd(page.faq_schema),
-          }}
-        />
-      )}
 
       <article>
         <header className="bg-slate-950 px-4 py-12 text-white sm:px-6 sm:py-16">
@@ -154,13 +95,14 @@ export default async function SeoContentPage({ params }: { params: Promise<{ slu
             <div className="mx-auto max-w-7xl">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand">Relevant directory inventory</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand">Matching stored area labels</p>
                   <h2 id="relevant-providers" className="mt-2 font-display text-3xl font-bold text-slate-950">
-                    Providers matching this guide
+                    Records labelled {areaMatch?.areas.join(", ")}
                   </h2>
                 </div>
                 <Link href="/trust" className="inline-flex items-center gap-2 text-sm font-bold text-brand hover:underline"><ShieldCheck className="h-4 w-4" /> How verification works</Link>
               </div>
+              <p className="mt-3 text-sm text-slate-600">{region?.coverageNote || "These are matching stored area labels, not confirmed service boundaries. Ask the business about your exact address."}</p>
               <div className="mt-7 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
                 {plumbers.map((plumber, index) => (
                   <PlumberCard key={plumber.id} plumber={plumber} sourcePage={`guide_${slug}`} rankPosition={index + 1} />
@@ -170,13 +112,15 @@ export default async function SeoContentPage({ params }: { params: Promise<{ slu
           </section>
         )}
 
+        {!areaMatch && <p className="mx-auto max-w-5xl px-4 pt-8 text-sm text-slate-600 sm:px-6">This guide does not have a town that can be matched narrowly to existing directory area labels. No broad KZN provider set is presented as local coverage. <Link href="/" className="font-semibold text-brand underline">Choose an area in the directory</Link>.</p>}
+
         <div className="mx-auto grid max-w-5xl gap-10 px-4 py-10 sm:px-6 sm:py-14 lg:grid-cols-[minmax(0,1fr)_260px]">
           <div className="seo-content" dangerouslySetInnerHTML={{ __html: body }} />
           <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
             {(region || service) && (
               <div className="rounded-xl border border-slate-200 bg-white p-5">
                 <MapPin className="h-5 w-5 text-brand" aria-hidden="true" />
-                <h2 className="mt-3 font-display text-lg font-bold text-slate-950">Continue with live listings</h2>
+                <h2 className="mt-3 font-display text-lg font-bold text-slate-950">Browse directory records</h2>
                 <div className="mt-4 space-y-2">
                   {region && <Link href={`/plumbers/${region.slug}`} className="flex items-center justify-between text-sm font-bold text-brand hover:underline">{region.shortName} plumbers <ArrowRight className="h-4 w-4" /></Link>}
                   {service && <Link href={`/services/${service.slug}`} className="flex items-center justify-between text-sm font-bold text-brand hover:underline">{service.name} providers <ArrowRight className="h-4 w-4" /></Link>}
@@ -193,31 +137,10 @@ export default async function SeoContentPage({ params }: { params: Promise<{ slu
   );
 }
 
-function findRegion(cityFocus: string | null) {
-  if (!cityFocus) return null;
-  const value = cityFocus.toLowerCase();
-  return REGIONS.find((region) =>
-    region.name.toLowerCase().includes(value) ||
-    region.shortName.toLowerCase().includes(value) ||
-    region.queryAreas.some((area) => area.toLowerCase() === value),
-  ) ?? null;
-}
-
 function findService(groupName: string | null, heading: string) {
   const value = `${groupName ?? ""} ${heading}`.toLowerCase();
   return SERVICE_GUIDES.find((service) => {
     const terms = [service.name, service.specialty, service.slug.replace(/-/g, " ")];
     return terms.some((term) => value.includes(term.toLowerCase()));
   }) ?? null;
-}
-
-function normaliseTarget(target: string): string {
-  if (target.startsWith("http")) {
-    try {
-      return new URL(target).pathname || "/";
-    } catch {
-      return "/";
-    }
-  }
-  return target.startsWith("/") ? target : `/${target}`;
 }

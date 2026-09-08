@@ -1,96 +1,24 @@
 import { NextResponse } from "next/server";
-import { REGIONS } from "@/lib/regions";
-import { isIndexableProfile } from "@/lib/content-quality";
-import { SERVICE_GUIDES } from "@/lib/services";
 import { SITE_URL } from "@/lib/site";
-import { getPublicSupabase } from "@/lib/supabase/public";
+import { getSitemapEntries, type SitemapType } from "@/lib/directory-sitemaps";
 
-const INDEXNOW_KEY = "001e7b24e19455300da367300ac77b65";
-const OFF_SCOPE_CONTENT = new Set(["gas-cape-town", "drain-durbanville", "general-durbanville", "geyser-durbanville"]);
-const SITE_HOST = new URL(SITE_URL).host;
-
-export const dynamic = "force-dynamic";
-
-export async function GET(request: Request) {
-  const configuredSecret = process.env.CRON_SECRET;
-  const authorization = request.headers.get("authorization");
-  if (!configuredSecret || authorization !== `Bearer ${configuredSecret}`) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-
-  const urls = new Set<string>([
-    SITE_URL,
-    `${SITE_URL}/all-plumbers`,
-    `${SITE_URL}/trust`,
-    `${SITE_URL}/help`,
-    ...REGIONS.map((region) => `${SITE_URL}/plumbers/${region.slug}`),
-    ...SERVICE_GUIDES.map((service) => `${SITE_URL}/services/${service.slug}`),
-  ]);
-  const supabase = getPublicSupabase();
-
-  if (supabase) {
-    const content = await supabase
-      .from("seo_pages")
-      .select("slug, index_status")
-      .eq("published", true)
-      .in("index_status", ["keep", "rebuild"]);
-    if (!content.error) {
-      for (const page of content.data ?? []) if (!OFF_SCOPE_CONTENT.has(page.slug)) urls.add(`${SITE_URL}/${page.slug}`);
-    } else {
-      const fallback = await supabase.from("seo_pages").select("slug").eq("published", true);
-      for (const page of fallback.data ?? []) if (!OFF_SCOPE_CONTENT.has(page.slug)) urls.add(`${SITE_URL}/${page.slug}`);
+const INDEXNOW_KEY="001e7b24e19455300da367300ac77b65";
+export const dynamic="force-dynamic";
+export async function GET(request:Request){
+  const secret=process.env.CRON_SECRET;
+  if(!secret||request.headers.get("authorization")!==`Bearer ${secret}`)return NextResponse.json({error:"Unauthorized"},{status:401,headers:{"Cache-Control":"no-store"}});
+  if(process.env.VERCEL_ENV!=="production")return NextResponse.json({error:"Search-engine submission is disabled outside production."},{status:409});
+  try{
+    const types:SitemapType[]=["core","regions","services","profiles","content","blog"];
+    const entries=await Promise.all(types.map(type=>getSitemapEntries(type)));
+    const urls=[...new Set(entries.flat().map(entry=>entry.loc))];
+    let submitted=0;
+    for(let i=0;i<urls.length;i+=10000){
+      const chunk=urls.slice(i,i+10000);
+      const response=await fetch("https://api.indexnow.org/indexnow",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({host:new URL(SITE_URL).host,key:INDEXNOW_KEY,keyLocation:`${SITE_URL}/${INDEXNOW_KEY}.txt`,urlList:chunk}),signal:AbortSignal.timeout(15000)});
+      if(!response.ok)return NextResponse.json({error:"Search-engine submission was not completed.",submitted,statusCode:response.status},{status:502,headers:{"Cache-Control":"no-store"}});
+      submitted+=chunk.length;
     }
-
-    const profileRows: Array<{
-      slug: string | null;
-      id: string;
-      profile_id: string | null;
-      verification_state?: string | null;
-      about: string | null;
-      google_review_count: number | null;
-      specialties: string[] | null;
-      photos: Array<{ photo_url: string | null }> | null;
-    }> = [];
-    for (let from = 0; ; from += 1000) {
-      let profiles = await supabase
-        .from("plumbers")
-        .select("slug, id, profile_id, verification_state, about, google_review_count, specialties, photos(photo_url)")
-        .eq("is_verified", true)
-        .range(from, from + 999);
-      if (profiles.error) {
-        profiles = await supabase
-          .from("plumbers")
-          .select("slug, id, profile_id, about, google_review_count, specialties, photos(photo_url)")
-          .eq("is_verified", true)
-          .range(from, from + 999) as typeof profiles;
-      }
-      if (profiles.error) break;
-      profileRows.push(...((profiles.data ?? []) as typeof profileRows));
-      if ((profiles.data?.length ?? 0) < 1000) break;
-    }
-    for (const plumber of profileRows.filter((item) => isIndexableProfile(item))) {
-      urls.add(`${SITE_URL}/plumber/${plumber.slug ?? plumber.id}`);
-    }
-
-    const articles = await supabase.from("articles").select("slug");
-    for (const article of articles.data ?? []) urls.add(`${SITE_URL}/blog/${article.slug}`);
-  }
-
-  const urlList = [...urls];
-  const response = await fetch("https://api.indexnow.org/indexnow", {
-    method: "POST",
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-    body: JSON.stringify({
-      host: SITE_HOST,
-      key: INDEXNOW_KEY,
-      keyLocation: `${SITE_URL}/${INDEXNOW_KEY}.txt`,
-      urlList,
-    }),
-  });
-
-  return NextResponse.json({
-    ok: response.ok,
-    statusCode: response.status,
-    submitted: urlList.length,
-  }, { status: response.ok ? 200 : 502 });
+    return NextResponse.json({ok:true,submitted},{headers:{"Cache-Control":"no-store"}});
+  }catch{return NextResponse.json({error:"Could not assemble the complete indexable URL set. Nothing further was submitted."},{status:503,headers:{"Cache-Control":"no-store"}});}
 }

@@ -1,6 +1,6 @@
-# Setup Guide
+# Historical local setup reference
 
-Use this guide for a new local or staging environment. For the existing production database, follow `DEPLOYMENT-RUNBOOK.md` instead of replaying every historical migration.
+For the current code-only release, follow GO-LIVE-2026-09-08.md. The owner does not need Docker, another database, local tests or migration 007. The commands below are optional developer reference; the old migrations are incomplete for recreating the production schema from scratch and are not a one-click installer.
 
 ## 1. Install and configure
 

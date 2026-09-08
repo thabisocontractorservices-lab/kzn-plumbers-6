@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/src/supabaseClient";
+import { safeAuthReturnPath } from "@/lib/auth-flow-return";
 
 export function LoginForm() {
   const [role, setRole] = useState<"plumber" | "homeowner">("plumber");
@@ -11,26 +12,48 @@ export function LoginForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get("error");
+    if (code === "auth" || code === "oauth") setError("The sign-in link could not be completed. It may have expired or been opened in a different browser. Please sign in again.");
+    if (code === "confirmation") setError("Confirm your email address before continuing.");
+  }, []);
+
+  function returnPath() {
+    return safeAuthReturnPath(new URLSearchParams(window.location.search).get("next"), role === "plumber" ? "/dashboard" : "/");
+  }
+
   async function loginEmail(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting) return;
     setSubmitting(true);
     setError(null);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
+    try {
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+      if (signInError) throw signInError;
+      if (!data.session || !data.user?.email_confirmed_at) throw new Error("Confirm your email before signing in.");
+      setPassword("");
+      // The cookie-aware client has persisted the session before this resolves.
+      window.location.assign(returnPath());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign in could not be completed. Please try again.");
       setSubmitting(false);
-      return setError(error.message);
     }
-    // Hard redirect so the server re-reads the session cookie and Navbar updates
-    window.location.href = role === "plumber" ? "/dashboard" : "/";
   }
 
   async function loginGoogle() {
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${location.origin}/auth/callback?next=${role === "plumber" ? "/dashboard" : "/"}`,
-      },
-    });
+    if (submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(returnPath())}` },
+      });
+      if (oauthError) throw oauthError;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Google sign in is unavailable. Try email instead.");
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -49,7 +72,7 @@ export function LoginForm() {
         ))}
       </div>
 
-      <button onClick={loginGoogle} className="btn-secondary w-full mb-4">
+      <button type="button" disabled={submitting} onClick={loginGoogle} className="btn-secondary w-full mb-4">
         <GoogleIcon />
         Continue with Google
       </button>
@@ -79,9 +102,7 @@ export function LoginForm() {
         />
 
         <div className="flex justify-between text-xs text-gray-600">
-          <label className="flex items-center gap-2">
-            <input type="checkbox" /> Remember me
-          </label>
+          <span>Sign out when using a shared device.</span>
           <Link href="/forgot-password" className="text-brand hover:underline">
             Forgot password?
           </Link>

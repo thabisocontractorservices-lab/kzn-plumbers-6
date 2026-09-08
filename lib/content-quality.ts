@@ -26,10 +26,17 @@ export function isIndexableProfile(profile: {
   google_review_count?: number | null;
   specialties?: string[] | null;
   photos?: Array<{ photo_url?: string | null }> | null;
+  is_verified?: boolean | null;
+  record_status?: string | null;
+  index_status?: string | null;
+  index_reviewed_at?: string | null;
 }): boolean {
-  if (profile.verification_state === "credential_verified" || profile.profile_id) return true;
-  if (usableProfileAbout(profile.about)) return true;
-  if ((profile.google_review_count ?? 0) > 0) return true;
-  if ((profile.specialties?.length ?? 0) > 0) return true;
-  return (profile.photos?.length ?? 0) > 0;
+  if (profile.is_verified === false) return false;
+  if (profile.record_status && profile.record_status !== "published") return false;
+  const reviewed = Date.parse(profile.index_reviewed_at ?? "");
+  if (Number.isFinite(reviewed) && reviewed <= Date.now() &&
+      ["noindex", "remove", "merge", "redirect"].includes(profile.index_status ?? "")) return false;
+  // Preserve historical publication/indexing. Description quality is a display
+  // decision, not authority to deindex hundreds of already-published businesses.
+  return true;
 }

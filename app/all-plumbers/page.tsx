@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { ArrowLeft, ArrowRight, MapPin } from "lucide-react";
 import { PlumberCard } from "@/components/PlumberCard";
-import { getAreaConfig } from "@/lib/directory";
+import { getAreaConfig, normaliseAreaKey, DIRECTORY_MAX_PAGE } from "@/lib/directory";
 import { getPublicPlumbers } from "@/lib/directory-data";
 import { safeJsonLd } from "@/lib/json-ld";
 import { REGIONS } from "@/lib/regions";
@@ -18,14 +19,14 @@ function value(input: string | string[] | undefined): string {
 
 function pageNumber(input: string | string[] | undefined): number {
   const parsed = Number(value(input) || "1");
-  return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, 100) : 1;
+  return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, DIRECTORY_MAX_PAGE) : 1;
 }
 
 export async function generateMetadata({ searchParams }: { searchParams: Search }): Promise<Metadata> {
   const search = await searchParams;
   const page = pageNumber(search.page);
-  const area = value(search.area);
-  const canonical = page > 1 && !area ? `/all-plumbers?page=${page}` : "/all-plumbers";
+  const area = normaliseAreaKey(value(search.area));
+  const canonical = pageHref(page, area);
   return {
     title: `All KZN Plumber Directory Records${page > 1 ? ` — Page ${page}` : ""} | KZN Plumbers`,
     description: "Browse published plumbing business records across KwaZulu-Natal, with transparent verification labels and direct contact options.",
@@ -38,17 +39,18 @@ export async function generateMetadata({ searchParams }: { searchParams: Search 
 export default async function AllPlumbersPage({ searchParams }: { searchParams: Search }) {
   const search = await searchParams;
   const page = pageNumber(search.page);
-  const areaKey = value(search.area);
+  const areaKey = normaliseAreaKey(value(search.area));
   const area = getAreaConfig(areaKey);
   const limit = 24;
   const { plumbers, total } = await getPublicPlumbers({ areas: area?.dbAreas, limit, offset: (page - 1) * limit });
   const totalPages = Math.max(1, Math.ceil(total / limit));
+  if (page > totalPages) notFound();
 
   const itemList = {
     "@context": "https://schema.org",
     "@type": "CollectionPage",
     name: area ? `Plumber directory records in ${area.label}` : "KwaZulu-Natal plumber directory records",
-    url: absoluteUrl("/all-plumbers"),
+    url: absoluteUrl(pageHref(page, areaKey)),
     mainEntity: {
       "@type": "ItemList",
       numberOfItems: plumbers.length,
@@ -99,15 +101,22 @@ export default async function AllPlumbersPage({ searchParams }: { searchParams: 
         {totalPages > 1 && (
           <nav aria-label="Directory pages" className="mt-10 flex items-center justify-between border-t border-slate-200 pt-6">
             {page > 1 ? (
-              <Link href={page === 2 ? "/all-plumbers" : `/all-plumbers?page=${page - 1}`} className="btn-secondary"><ArrowLeft className="h-4 w-4" /> Previous</Link>
+              <Link href={pageHref(page - 1, areaKey)} className="btn-secondary"><ArrowLeft className="h-4 w-4" /> Previous</Link>
             ) : <span />}
             <span className="text-sm text-slate-600">Page {page} of {totalPages}</span>
             {page < totalPages ? (
-              <Link href={`/all-plumbers?page=${page + 1}`} className="btn-secondary">Next <ArrowRight className="h-4 w-4" /></Link>
+              <Link href={pageHref(page + 1, areaKey)} className="btn-secondary">Next <ArrowRight className="h-4 w-4" /></Link>
             ) : <span />}
           </nav>
         )}
       </main>
     </>
   );
+}
+
+function pageHref(page: number, area: string): string {
+  const params = new URLSearchParams();
+  if (area) params.set("area", area);
+  if (page > 1) params.set("page", String(page));
+  return params.size ? `/all-plumbers?${params.toString()}` : "/all-plumbers";
 }

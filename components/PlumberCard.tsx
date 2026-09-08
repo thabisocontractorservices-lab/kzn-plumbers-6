@@ -3,48 +3,37 @@
 import Image from "next/image";
 import Link from "next/link";
 import { BadgeCheck, Building2, Clock3, MapPin, MessageCircle, Phone, ShieldQuestion, Star } from "lucide-react";
-import { callLink, formatRand, initials, isLandline, whatsAppLink } from "@/lib/utils";
+import { formatRand, initials } from "@/lib/utils";
 import { trackEvent } from "@/lib/analytics";
 import {
   formattedVerificationDate,
-  getVerificationState,
   verificationDescription,
   verificationLabel,
   verificationTone,
 } from "@/lib/verification";
-import type { Plumber } from "@/types/database";
-
-type CardPlumber = Plumber & {
-  verification_state?: "credential_verified" | "business_claimed" | "directory_record" | null;
-  credential_verified_at?: string | null;
-  verification_expires_at?: string | null;
-  last_checked_at?: string | null;
-  response_time_minutes?: number | null;
-  accepts_new_work?: boolean | null;
-};
+import type { PublicPlumber } from "@/lib/directory-public-types";
+import { directoryContact } from "@/lib/directory-contact";
 
 export function PlumberCard({
   plumber,
   sourcePage = "directory",
   rankPosition,
 }: {
-  plumber: CardPlumber;
+  plumber: PublicPlumber;
   sourcePage?: string;
   rankPosition?: number;
 }) {
-  const landline = isLandline(plumber.whatsapp_number);
   const profileHref = `/plumber/${plumber.slug ?? plumber.id}`;
   const primaryService = plumber.specialties?.[0] ?? "plumbing work";
   const message = `Hi, I found ${plumber.trading_name} on kznplumbers.co.za and would like to get a quote for ${primaryService.toLowerCase()} in ${plumber.area}.`;
-  const waLink = whatsAppLink(plumber.whatsapp_number, message);
-  const phoneLink = callLink(plumber.whatsapp_number);
+  const { phoneHref: phoneLink, whatsappHref: waLink } = directoryContact(plumber.whatsapp_number, message);
   const profilePhoto = plumber.photos?.find((photo) => photo.is_profile_photo)?.photo_url ?? null;
-  const state = getVerificationState(plumber);
-  const checkedDate = formattedVerificationDate(plumber.credential_verified_at || plumber.last_checked_at);
+  const state = plumber.verification_state;
+  const checkedDate = formattedVerificationDate(plumber.credential_verified_at);
   const rating = plumber.google_rating && plumber.google_review_count
     ? Number(plumber.google_rating)
     : null;
-  const takingWork = plumber.accepts_new_work !== false && plumber.availability_status === "available";
+  const takingWork = plumber.taking_work;
 
   function trackContact(kind: "whatsapp_click" | "call_click") {
     trackEvent(kind, {
@@ -109,10 +98,10 @@ export function PlumberCard({
         <div className="flex flex-wrap gap-1.5">
           <span className={`badge ${takingWork ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
             <Clock3 className="h-3 w-3" aria-hidden="true" />
-            {takingWork ? "Taking work" : "Confirm availability"}
+            {takingWork ? "Recently opted in · confirm" : "Confirm availability"}
           </span>
           {plumber.is_emergency && (
-            <span className="badge bg-orange-50 text-orange-800">24-hour call-outs listed</span>
+            <span className="badge bg-orange-50 text-orange-800">Emergency service listed</span>
           )}
           {plumber.pirb_number && state === "credential_verified" && (
             <span className="badge bg-teal-light text-teal">PIRB {plumber.pirb_number}</span>
@@ -153,20 +142,17 @@ export function PlumberCard({
       </div>
 
       <div className="mt-auto grid grid-cols-[1fr_auto] gap-2 pt-4">
-        {landline ? (
+        {waLink ? (
+          <a href={waLink} target="_blank" rel="noopener noreferrer"
+            onClick={() => trackContact("whatsapp_click")} className="btn-whatsapp">
+            <MessageCircle className="h-4 w-4" aria-hidden="true" /> WhatsApp
+          </a>
+        ) : phoneLink ? (
           <a href={phoneLink} onClick={() => trackContact("call_click")} className="btn-primary">
             <Phone className="h-4 w-4" aria-hidden="true" /> Call
           </a>
         ) : (
-          <a
-            href={waLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => trackContact("whatsapp_click")}
-            className="btn-whatsapp"
-          >
-            <MessageCircle className="h-4 w-4" aria-hidden="true" /> WhatsApp
-          </a>
+          <span className="self-center text-xs text-slate-500">Phone not recorded</span>
         )}
         <Link
           href={profileHref}

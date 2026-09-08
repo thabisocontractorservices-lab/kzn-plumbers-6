@@ -1,4 +1,8 @@
-# KZN Plumbers Deployment and Search Migration Runbook
+# Historical migration runbook — not the current code-only deployment path
+
+> Superseded for the 8 September 2026 code-first release by GO-LIVE-2026-09-08.md. No staging, Docker, review deletion or migration 007 is required to deploy that code. This document describes a separate unfinished database-migration workstream. Its forward and rollback scripts must not be treated as production-approved.
+
+## Previous deployment and search migration runbook
 
 This release is designed for GitHub to Vercel. Apply it in stages; do not combine database cleanup, redirects, and a code deployment without a tested rollback.
 

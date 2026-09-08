@@ -21,6 +21,8 @@ type Booking = {
   status: "pending" | "confirmed" | "cancelled";
   job_outcome?: "accepted" | "declined" | "won" | "lost" | "cancelled" | null;
   created_at?: string;
+  updated_at?: string;
+  notes?: string;
 };
 
 export default function BookingsPage() {
@@ -41,35 +43,25 @@ export default function BookingsPage() {
         router.replace("/register");
         return;
       }
-      const { data } = await supabase.from("bookings").select("*").eq("plumber_id", plumber.id).order("created_at", { ascending: false });
+      const { data, error } = await supabase.from("bookings").select("*").eq("plumber_id", plumber.id).order("created_at", { ascending: false });
+      if(error){if(mounted){setError("Bookings could not load. Reload the page.");setLoading(false);}return;}
       if (mounted) {
         setBookings((data as Booking[]) ?? []);
         setLoading(false);
       }
-    })();
+    })().catch(()=>{if(mounted){setError("Bookings could not load.");setLoading(false);}});
     return () => { mounted = false; };
   }, [user, router]);
 
   async function updateOutcome(booking: Booking, outcome: "accepted" | "declined" | "won" | "lost") {
-    setUpdating(booking.id);
-    setError(null);
-    const now = new Date().toISOString();
-    const payload = {
-      status: outcome === "accepted" || outcome === "won" ? "confirmed" : "cancelled",
-      job_outcome: outcome,
-      accepted_at: outcome === "accepted" ? now : undefined,
-      completed_at: outcome === "won" || outcome === "lost" ? now : undefined,
-    };
-    let result = await supabase.from("bookings").update(payload).eq("id", booking.id);
-    if (result.error && /column|schema cache/i.test(result.error.message)) {
-      result = await supabase.from("bookings").update({ status: payload.status }).eq("id", booking.id);
-    }
-    if (result.error) {
-      setError(result.error.message);
-    } else {
-      setBookings((current) => current.map((item) => item.id === booking.id ? { ...item, ...payload } as Booking : item));
-    }
-    setUpdating(null);
+    setUpdating(booking.id); setError(null);
+    try {
+      const response=await fetch("/api/dashboard/bookings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:booking.id,outcome,expected_updated_at:booking.updated_at})});
+      const result=await response.json();
+      if(!response.ok)throw new Error(result.error||"Booking update failed.");
+      setBookings(current=>current.map(item=>item.id===booking.id?result.booking as Booking:item));
+    }catch(err){setError(err instanceof Error?err.message:"Update failed; reload before retrying.");}
+    finally{setUpdating(null);}
   }
 
   if (authChecking || loading) return <DashboardLoading />;
@@ -79,7 +71,7 @@ export default function BookingsPage() {
     <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:grid-cols-[240px_1fr]">
       <DashboardNav />
       <main>
-        <div className="mb-6"><h1 className="font-display text-3xl font-bold text-slate-950">Booking requests</h1><p className="mt-1 text-sm text-slate-600">Record acceptance and job outcomes so lead quality can be measured.</p></div>
+        <div className="mb-6"><h1 className="font-display text-3xl font-bold text-slate-950">Booking requests</h1><p className="mt-1 text-sm text-slate-600">Confirm or decline requests. Job-outcome controls appear only when the database can store them.</p></div>
         {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p>}
         {bookings.length === 0 ? (
           <div className="panel text-sm text-slate-600">No booking requests yet.</div>
@@ -92,6 +84,7 @@ export default function BookingsPage() {
                     <div className="flex flex-wrap items-center gap-2"><h2 className="font-display text-lg font-bold text-slate-950">{booking.customer_name}</h2><span className={`badge ${statusClass(booking.status)}`}>{booking.job_outcome || booking.status}</span>{booking.urgency && <span className={`badge ${booking.urgency === "emergency" ? "bg-red-100 text-red-800" : "bg-slate-100 text-slate-700"}`}>{booking.urgency}</span>}</div>
                     <p className="mt-2 text-sm font-semibold text-slate-800">{booking.service_requested || "Plumbing request"}{booking.suburb ? ` · ${booking.suburb}` : ""}</p>
                     <p className="mt-2 text-sm leading-relaxed text-slate-600">{booking.job_description}</p>
+                    {booking.notes && <p className="mt-3 whitespace-pre-wrap text-xs text-slate-600">{booking.notes}</p>}
                     <p className="mt-3 text-xs text-slate-500">Preferred: {new Date(booking.preferred_datetime).toLocaleString("en-ZA")}</p>
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
@@ -102,8 +95,8 @@ export default function BookingsPage() {
 
                 <div className="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
                   {booking.job_outcome !== "won" && <button disabled={updating === booking.id} onClick={() => updateOutcome(booking, "accepted")} className="btn-secondary">Accept lead</button>}
-                  <button disabled={updating === booking.id} onClick={() => updateOutcome(booking, "won")} className="btn bg-emerald-700 text-white hover:bg-emerald-800">Mark job won</button>
-                  <button disabled={updating === booking.id} onClick={() => updateOutcome(booking, "lost")} className="btn-secondary">Mark not won</button>
+                  {Object.prototype.hasOwnProperty.call(booking,"job_outcome") && <button disabled={updating === booking.id} onClick={() => updateOutcome(booking, "won")} className="btn bg-emerald-700 text-white hover:bg-emerald-800">Mark job won</button>}
+                  {Object.prototype.hasOwnProperty.call(booking,"job_outcome") && <button disabled={updating === booking.id} onClick={() => updateOutcome(booking, "lost")} className="btn-secondary">Mark not won</button>}
                   {booking.status === "pending" && <button disabled={updating === booking.id} onClick={() => updateOutcome(booking, "declined")} className="btn-secondary">Decline</button>}
                 </div>
               </article>

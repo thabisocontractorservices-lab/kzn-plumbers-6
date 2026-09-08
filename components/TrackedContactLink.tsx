@@ -27,12 +27,11 @@ export function TrackedContactLink({
       target={newWindow ? "_blank" : undefined}
       rel={newWindow ? "noopener noreferrer" : undefined}
       className={className}
-      onClick={() => trackEvent(kind, {
-        plumber_id: plumberId,
-        area,
-        service,
-        source_page: "plumber_profile",
-      })}
+      onClick={() => {
+        // Track a coarse action only. Never include the contact href or WhatsApp text,
+        // and never await metrics or interfere with native link navigation.
+        trackEvent(kind, { plumber_id: plumberId, area, service, source_page: "plumber_profile" });
+      }}
     >
       {children}
     </a>

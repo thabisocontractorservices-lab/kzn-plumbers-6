@@ -13,8 +13,9 @@ describe("profile description quality gate", () => {
     expect(isIndexableProfile({ about })).toBe(true);
   });
 
-  it("keeps empty imported records out of the index until they gain a real signal", () => {
-    expect(isIndexableProfile({ about: "Generated filler", specialties: [], google_review_count: 0, photos: [] })).toBe(false);
+  it("preserves historical URLs instead of automatically noindexing sparse profiles", () => {
+    expect(isIndexableProfile({ about: "Generated filler", specialties: [], google_review_count: 0, photos: [] })).toBe(true);
+    expect(isIndexableProfile({is_verified:false})).toBe(false);
     expect(isIndexableProfile({ profile_id: "owner" })).toBe(true);
     expect(isIndexableProfile({ google_review_count: 2 })).toBe(true);
   });

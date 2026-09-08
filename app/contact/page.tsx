@@ -8,7 +8,9 @@ export const metadata: Metadata = {
   alternates: { canonical: "/contact" },
 };
 
-export default function ContactPage() {
+export default async function ContactPage({searchParams}:{searchParams:Promise<{review?:string|string[]}>}) {
+  const input=(await searchParams).review;
+  const reviewId=typeof input==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input)?input:undefined;
   return (
     <>
       {/* Hero */}
@@ -28,7 +30,7 @@ export default function ContactPage() {
           {/* Contact form */}
           <div>
             <h2 className="font-display text-xl font-bold mb-4">Send us a message</h2>
-            <ContactForm />
+            <ContactForm reviewId={reviewId} />
           </div>
 
           {/* Contact info */}

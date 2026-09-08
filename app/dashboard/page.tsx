@@ -47,12 +47,12 @@ type Booking = {
 };
 
 type LeadCounts = {
-  whatsapp_click: number;
-  call_click: number;
-  booking_complete: number;
+  whatsapp_click: number | null;
+  call_click: number | null;
+  booking_complete: number | null;
 };
 
-const EMPTY_LEAD_COUNTS: LeadCounts = { whatsapp_click: 0, call_click: 0, booking_complete: 0 };
+const EMPTY_LEAD_COUNTS: LeadCounts = { whatsapp_click: null, call_click: null, booking_complete: null };
 
 export default function DashboardPage() {
   const { user, authChecking } = useAuthGate();
@@ -155,12 +155,12 @@ export default function DashboardPage() {
         ]);
         if (mounted) {
           setBookings((bookingResult.data as Booking[]) ?? []);
-          setLeadCounts(countLeadEvents(eventResult.data ?? []));
+          setLeadCounts(eventResult.error || (eventResult.data?.length ?? 0) >= 1000 ? EMPTY_LEAD_COUNTS : countLeadEvents(eventResult.data ?? []));
         }
       }
 
       if (mounted) setLoading(false);
-    })();
+    })().catch(() => { if (mounted) { setLoading(false); setLeadCounts(EMPTY_LEAD_COUNTS); } });
 
     return () => {
       mounted = false;
@@ -218,7 +218,7 @@ export default function DashboardPage() {
                 : "Here’s what’s happening with your business today"}
             </p>
           </div>
-          <AvailabilityToggle plumberId={p.id} initial={p.availability_status} initialConfirmed={p.accepts_new_work ?? false} />
+          {isAdmin && previewingAs ? <Link href="/admin?view=listings" className="btn-secondary">Manage in admin workspace</Link> : <AvailabilityToggle plumberId={p.id} initial={p.availability_status} initialConfirmed={p.accepts_new_work ?? false} />}
         </header>
 
         {/* Admin: searchable plumber switcher */}
@@ -335,9 +335,9 @@ export default function DashboardPage() {
 
         <div className="grid grid-cols-2 gap-4 mb-6 lg:grid-cols-3 xl:grid-cols-6">
           <Stat icon="👁" value={p.profile_views} label="Recorded profile views" color="bg-brand-light text-brand" />
-          <Stat icon="↗" value={leadCounts.whatsapp_click + leadCounts.call_click} label="Direct contacts · 30d" color="bg-emerald-100 text-emerald-800" />
-          <Stat icon="W" value={leadCounts.whatsapp_click} label="WhatsApp clicks · 30d" color="bg-green-100 text-green-800" />
-          <Stat icon="☎" value={leadCounts.call_click} label="Call clicks · 30d" color="bg-blue-100 text-blue-800" />
+          <Stat icon="↗" value={leadCounts.whatsapp_click===null || leadCounts.call_click===null ? "Not tracked" : leadCounts.whatsapp_click + leadCounts.call_click} label="Direct contacts · 30d" color="bg-emerald-100 text-emerald-800" />
+          <Stat icon="W" value={leadCounts.whatsapp_click ?? "Not tracked"} label="WhatsApp clicks · 30d" color="bg-green-100 text-green-800" />
+          <Stat icon="☎" value={leadCounts.call_click ?? "Not tracked"} label="Call clicks · 30d" color="bg-blue-100 text-blue-800" />
           <Stat icon="📅" value={bookings.length} label="Recent bookings" color="bg-purple-100 text-purple-700" />
           <Stat icon="★" value={r.rating ?? "—"} label={`Average · ${r.count} reviews`} color="bg-amber-light text-amber" />
         </div>
@@ -356,9 +356,9 @@ export default function DashboardPage() {
 
 
 function countLeadEvents(events: Array<{ event_name: string }>): LeadCounts {
-  const counts = { ...EMPTY_LEAD_COUNTS };
+  const counts: LeadCounts = { whatsapp_click: 0, call_click: 0, booking_complete: 0 };
   for (const event of events) {
-    if (event.event_name in counts) counts[event.event_name as keyof LeadCounts] += 1;
+    if (event.event_name in counts) counts[event.event_name as keyof LeadCounts] = (counts[event.event_name as keyof LeadCounts] ?? 0) + 1;
   }
   return counts;
 }

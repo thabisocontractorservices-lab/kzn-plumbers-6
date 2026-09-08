@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, ArrowRight, CheckCircle2, MapPin, ShieldCheck } from "lucide-react";
 import { PlumberCard } from "@/components/PlumberCard";
 import { getPublicPlumbers } from "@/lib/directory-data";
+import { DIRECTORY_MAX_PAGE } from "@/lib/directory";
 import { safeJsonLd } from "@/lib/json-ld";
 import { getRegion, REGIONS } from "@/lib/regions";
 import { absoluteUrl, SITE_NAME } from "@/lib/site";
@@ -18,7 +19,7 @@ export function generateStaticParams() {
 function pageNumber(value: string | string[] | undefined): number {
   const raw = Array.isArray(value) ? value[0] : value;
   const parsed = Number(raw ?? "1");
-  return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, 100) : 1;
+  return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, DIRECTORY_MAX_PAGE) : 1;
 }
 
 export async function generateMetadata({
@@ -69,7 +70,7 @@ export default async function RegionPage({
     offset: (page - 1) * limit,
   });
   const totalPages = Math.max(1, Math.ceil(total / limit));
-  if (page > totalPages && total > 0) notFound();
+  if (page > totalPages) notFound();
 
   const canonical = page > 1 ? `/plumbers/${slug}?page=${page}` : `/plumbers/${slug}`;
   const jsonLd = [
@@ -137,13 +138,15 @@ export default async function RegionPage({
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand">Local inventory first</p>
               <h2 id="providers-heading" className="mt-2 font-display text-3xl font-bold text-slate-950">
-                Compare providers serving {region.shortName}
+                Records labelled {region.queryAreas.join(", ")}
               </h2>
             </div>
             <Link href={`/trust`} className="inline-flex items-center gap-2 text-sm font-bold text-brand hover:underline">
               <ShieldCheck className="h-4 w-4" aria-hidden="true" /> How verification works
             </Link>
           </div>
+
+          <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-950">{region.coverageNote}</p>
 
           {plumbers.length ? (
             <div className="mt-7 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
@@ -159,7 +162,7 @@ export default async function RegionPage({
           ) : (
             <div className="mt-7 rounded-2xl border border-slate-200 bg-white p-8 text-center">
               <h2 className="font-display text-xl font-bold text-slate-950">No matching records are published yet</h2>
-              <p className="mt-2 text-sm text-slate-600">Browse the full KZN directory while this regional collection is completed.</p>
+              <p className="mt-2 text-sm text-slate-600">This is not evidence that no plumbers serve the area. The directory has no published records with this exact area label. Use the full KZN directory and confirm coverage directly.</p>
               <Link href="/" className="btn-primary mt-5">Browse all KZN plumbers</Link>
             </div>
           )}
@@ -196,7 +199,7 @@ export default async function RegionPage({
           </div>
           <aside className="rounded-2xl bg-slate-100 p-6">
             <MapPin className="h-5 w-5 text-brand" aria-hidden="true" />
-            <h2 className="mt-3 font-display text-xl font-bold text-slate-950">Commonly searched nearby areas</h2>
+            <h2 className="mt-3 font-display text-xl font-bold text-slate-950">Nearby places to ask about</h2>
             <div className="mt-4 flex flex-wrap gap-2">
               {region.nearby.map((area) => (
                 <span key={area} className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700">{area}</span>

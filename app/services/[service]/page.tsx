@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, MapPin, ShieldCheck } from "lucide-react";
 import { PlumberCard } from "@/components/PlumberCard";
-import { DIRECTORY_AREAS } from "@/lib/directory";
+import { DIRECTORY_AREAS, DIRECTORY_MAX_PAGE } from "@/lib/directory";
 import { getPublicPlumbers } from "@/lib/directory-data";
 import { safeJsonLd } from "@/lib/json-ld";
 import { getServiceGuide, SERVICE_GUIDES } from "@/lib/services";
@@ -19,7 +19,7 @@ export function generateStaticParams() {
 function pageNumber(value: string | string[] | undefined): number {
   const raw = Array.isArray(value) ? value[0] : value;
   const parsed = Number(raw ?? "1");
-  return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, 100) : 1;
+  return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, DIRECTORY_MAX_PAGE) : 1;
 }
 
 export async function generateMetadata({
@@ -68,7 +68,7 @@ export default async function ServicePage({
     offset: (page - 1) * limit,
   });
   const totalPages = Math.max(1, Math.ceil(total / limit));
-  if (page > totalPages && total > 0) notFound();
+  if (page > totalPages) notFound();
   const canonical = page > 1 ? `/services/${slug}?page=${page}` : `/services/${slug}`;
 
   const jsonLd = [

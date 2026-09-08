@@ -1,102 +1,57 @@
-import { NextRequest, NextResponse } from "next/server";
+import "server-only";
+import { NextRequest } from "next/server";
 import { z } from "zod";
 import { notifyNewClaim } from "@/lib/email";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { SITE_URL } from "@/lib/site";
+import { AccessError, privateJson, requireSameOrigin, requireUser } from "@/lib/server-access";
+import { authFlowPublishedBusiness, ensureAuthFlowProfile } from "@/lib/auth-flow-records";
+import { authFlowFailure as accessFailure, missingAuthFlowColumn, readAuthFlowJson } from "@/lib/auth-flow-input";
+import { formatWhatsApp } from "@/lib/utils";
 
 const Schema = z.object({
   plumber_id: z.string().uuid(),
-  phone: z.string().trim().min(7).max(30),
+  phone: z.string().trim().max(30).regex(/^[+\d\s()-]+$/)
+    .refine((value) => /^27[1-8]\d{8}$/.test(formatWhatsApp(value)), "Enter a South African business number."),
 });
 
 export async function POST(request: NextRequest) {
   try {
-    const origin = request.headers.get("origin");
-    if (origin && process.env.NODE_ENV === "production") {
-      const originHost = new URL(origin).host;
-      const requestHost = request.headers.get("host");
-      if (originHost !== requestHost && originHost !== new URL(SITE_URL).host) {
-        return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
-      }
-    }
-    if (Number(request.headers.get("content-length") || 0) > 4096) {
-      return NextResponse.json({ error: "Ownership request is too large" }, { status: 413 });
-    }
-
-    const authHeader = request.headers.get("authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Sign in before requesting ownership" }, { status: 401 });
-    }
-
+    requireSameOrigin(request);
+    const user = await requireUser(request);
+    const parsed = Schema.safeParse(await readAuthFlowJson(request, 4096));
+    if (!parsed.success) return privateJson({ error: "Check the claim details." }, 400);
+    const plumber = await authFlowPublishedBusiness(parsed.data.plumber_id);
+    if (plumber.profile_id) return privateJson({ error: "This listing is already linked to an account." }, 409);
     const admin = getSupabaseAdmin();
-    const token = authHeader.slice(7);
-    const { data: { user }, error: authError } = await admin.auth.getUser(token);
-    if (authError || !user) return NextResponse.json({ error: "Invalid session" }, { status: 401 });
+    const owned = await admin.from("plumbers").select("id").eq("profile_id", user.id).limit(1);
+    if (owned.error) throw new AccessError("Cannot check your existing business profile right now.", 503);
+    if (owned.data?.length) return privateJson({ error: "This account already has a business profile. Contact support about a different listing." }, 409);
+    const existing = await admin.from("claims").select("id, status")
+      .eq("plumber_id", plumber.id).eq("claimant_id", user.id).eq("status", "pending").limit(1);
+    if (existing.error) throw new AccessError("Ownership requests are temporarily unavailable.", 503);
+    if (existing.data?.length) return privateJson({ error: "You already have a pending ownership request.", status: "pending" }, 409);
+    await ensureAuthFlowProfile(user);
 
-    const parsed = Schema.safeParse(await request.json());
-    if (!parsed.success) return NextResponse.json({ error: "Check the claim details" }, { status: 400 });
-
-    const { data: plumber } = await admin
-      .from("plumbers")
-      .select("id, profile_id, whatsapp_number, trading_name, slug")
-      .eq("id", parsed.data.plumber_id)
-      .maybeSingle();
-    if (!plumber) return NextResponse.json({ error: "Listing not found" }, { status: 404 });
-    if (plumber.profile_id) return NextResponse.json({ error: "This listing has already been claimed" }, { status: 409 });
-
-    const { data: existing } = await admin
-      .from("claims")
-      .select("id, status")
-      .eq("plumber_id", plumber.id)
-      .eq("claimant_id", user.id)
-      .eq("status", "pending")
-      .maybeSingle();
-    if (existing) return NextResponse.json({ error: "You already have a pending ownership request", status: existing.status }, { status: 409 });
-
-    const phoneMatchObserved = normalisePhone(parsed.data.phone) === normalisePhone(plumber.whatsapp_number);
-    const enriched = {
-      plumber_id: plumber.id,
-      claimant_id: user.id,
-      phone_entered: parsed.data.phone,
-      status: "pending",
-      phone_match_observed: phoneMatchObserved,
-      review_reason: phoneMatchObserved ? "Phone matched public record; ownership evidence still required" : "Phone differs from public record; manual evidence required",
+    // Comparing a public phone number is context for the reviewer, never proof of ownership.
+    const phoneMatchObserved = formatWhatsApp(parsed.data.phone) === formatWhatsApp(plumber.whatsapp_number);
+    const reason = phoneMatchObserved ? "Public phone matched; independent ownership evidence still required." : "Public phone differs; independent ownership evidence required.";
+    const payload: Record<string, unknown> = {
+      plumber_id: plumber.id, claimant_id: user.id, phone_entered: formatWhatsApp(parsed.data.phone),
+      status: "pending", admin_notes: `[request context] ${reason}`,
+      phone_match_observed: phoneMatchObserved, review_reason: reason,
     };
-    let insert = await admin.from("claims").insert(enriched);
-    if (insert.error && /column|schema cache/i.test(insert.error.message)) {
-      insert = await admin.from("claims").insert({
-        plumber_id: plumber.id,
-        claimant_id: user.id,
-        phone_entered: parsed.data.phone,
-        status: "pending",
-      });
+    const optional = ["phone_match_observed", "review_reason"];
+    let inserted = await admin.from("claims").insert(payload);
+    for (let attempt = 0; inserted.error && attempt < optional.length; attempt++) {
+      const missing = missingAuthFlowColumn(inserted.error, "claims", optional);
+      if (!missing || !(missing in payload)) break;
+      delete payload[missing];
+      inserted = await admin.from("claims").insert(payload);
     }
-    if (insert.error) {
-      console.error("[claim] Insert failed:", insert.error.message);
-      return NextResponse.json({ error: "Ownership request could not be saved" }, { status: 503 });
-    }
+    if (inserted.error) throw new AccessError("Ownership request could not be confirmed as saved. Check before submitting again.", 503);
 
-    void notifyNewClaim({
-      tradingName: plumber.trading_name,
-      claimantEmail: user.email || "unknown",
-      phoneEntered: parsed.data.phone,
-      phoneMatch: phoneMatchObserved,
-      status: "pending",
-    }).catch(() => {});
-
-    return NextResponse.json({
-      status: "pending",
-      message: "Your ownership request is pending review. We may ask for additional evidence before transferring the listing.",
-    }, { status: 201 });
-  } catch (error) {
-    console.error("[claim] Unexpected error:", error);
-    return NextResponse.json({ error: "Ownership request could not be processed" }, { status: 500 });
-  }
-}
-
-function normalisePhone(phone: string): string {
-  let digits = (phone || "").replace(/\D/g, "");
-  if (digits.startsWith("0")) digits = `27${digits.slice(1)}`;
-  if (!digits.startsWith("27") && digits.length === 9) digits = `27${digits}`;
-  return digits;
+    // The request is saved independently of optional notification delivery.
+    void notifyNewClaim({ tradingName: plumber.trading_name, claimantEmail: user.email!, phoneEntered: parsed.data.phone, phoneMatch: phoneMatchObserved, status: "pending" }).catch(() => {});
+    return privateJson({ status: "pending", message: "Request saved for manual review. No ownership access has been transferred." }, 201);
+  } catch (error) { return accessFailure(error); }
 }

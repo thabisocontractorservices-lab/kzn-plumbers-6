@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { SITE_URL } from "@/lib/site";
+import { isAllowedAdminEmail } from "@/lib/admin-identity";
 import { SUPABASE_PUBLIC_KEY, SUPABASE_URL } from "@/src/supabaseClient";
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
@@ -56,7 +57,7 @@ export async function proxy(request: NextRequest) {
       .select("role")
       .eq("id", user.id)
       .single<{ role: string }>();
-    if (profile?.role !== "admin") return NextResponse.redirect(new URL("/dashboard", request.url));
+    if (profile?.role !== "admin" || !isAllowedAdminEmail(user.email) || !user.email_confirmed_at) return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   return response;
