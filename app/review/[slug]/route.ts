@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { supabase } from "@/src/supabaseClient";
+import { getPublicSupabase } from "@/lib/supabase/public";
 import { reviewUrl } from "@/lib/google/places";
 
 /**
@@ -12,6 +12,8 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> },
 ) {
   const { slug } = await params;
+  const supabase = getPublicSupabase();
+  if (!supabase) return NextResponse.redirect(new URL("/", request.url));
 
   // Resolve by slug or UUID — same caveat as /plumber/[id]: can't use .or()
   // because UUID casting on the id column errors for non-UUID strings.

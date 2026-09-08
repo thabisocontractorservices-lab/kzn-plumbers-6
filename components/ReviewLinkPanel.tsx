@@ -22,7 +22,7 @@ export function ReviewLinkPanel({
     <div className="panel">
       <h3 className="font-display text-lg font-bold mb-1">Share Review Link</h3>
       <p className="text-xs text-gray-500 mb-4">
-        Help this plumber by leaving a Google review
+        Open or share {plumberName}&apos;s Google review link
       </p>
 
       <div className="flex flex-col sm:flex-row gap-4 items-center sm:items-start">

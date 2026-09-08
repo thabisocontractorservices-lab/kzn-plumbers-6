@@ -4,7 +4,8 @@ import Link from "next/link";
 export const metadata: Metadata = {
   title: "About Us — KZN Plumbers Directory",
   description:
-    "KZN Plumbers Directory connects KwaZulu-Natal homeowners with verified, PIRB-registered plumbers. Learn about our mission and how we work.",
+    "KZN Plumbers Directory helps KwaZulu-Natal homeowners compare plumbing businesses using local filters and transparent verification labels.",
+  alternates: { canonical: "/about" },
 };
 
 export default function AboutPage() {
@@ -17,7 +18,7 @@ export default function AboutPage() {
             About Us
           </h1>
           <p className="text-sm sm:text-lg opacity-90 max-w-xl mx-auto">
-            Connecting KwaZulu-Natal homeowners with trusted, verified plumbers.
+            A local directory with clearer evidence and direct contact.
           </p>
         </div>
       </section>
@@ -34,12 +35,12 @@ export default function AboutPage() {
           <p className="text-gray-700 leading-relaxed mb-4">
             We recognised a gap in the market where homeowners struggled to find reliable, qualified plumbers — and where
             hardworking plumbers had limited visibility online. KZN Plumbers Directory bridges that gap by providing a
-            free, verified listing platform that connects the right plumber with the right customer.
+            free, KZN-specific listing platform that helps homeowners compare relevant businesses directly.
           </p>
           <p className="text-gray-700 leading-relaxed">
-            Every plumber on our platform is verified before their listing goes live. We prioritise PIRB-registered
-            tradespeople because certification matters — it means your plumber has been assessed against industry
-            standards and carries the qualifications needed to do the job safely and correctly.
+            Published profiles carry one of three states: credential verified, business claimed, or directory record.
+            Those labels describe what evidence we hold; they do not guarantee workmanship, price, availability, or the
+            registration required for every type of job.
           </p>
         </section>
 
@@ -51,7 +52,7 @@ export default function AboutPage() {
               {
                 icon: "🔍",
                 title: "Search",
-                desc: "Browse 1,200+ verified plumbers by area, specialty, or name. Filter by certification, availability, and emergency callout.",
+                desc: "Search published KZN plumbing records by area, job type, trust state, and listed availability.",
               },
               {
                 icon: "💬",
@@ -86,11 +87,11 @@ export default function AboutPage() {
           </p>
           <ul className="space-y-2 text-gray-700 mb-6">
             {[
-              "A verified business profile visible to thousands of homeowners",
+              "A business profile with a clearly labelled ownership and credential state",
               "Direct WhatsApp contact — customers message you instantly",
               "Google review integration — your real ratings displayed",
               "Photo gallery to showcase your work",
-              "Certification badges (PIRB, SESSA, LPGSA)",
+              "Credential labels only when the relevant evidence has been reviewed",
               "Booking requests from your profile page",
               "Invoice generation tools",
             ].map((item) => (
@@ -115,7 +116,7 @@ export default function AboutPage() {
           </p>
           <ul className="space-y-2 text-gray-700 mb-6">
             {[
-              "Every plumber is verified before going live",
+              "Clear separation between checked credentials, claimed businesses, and unclaimed records",
               "Real Google reviews — not fabricated testimonials",
               "Direct WhatsApp contact — no middlemen",
               "Filter by area, specialty, and emergency availability",

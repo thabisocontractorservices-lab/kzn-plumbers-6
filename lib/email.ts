@@ -1,165 +1,84 @@
-/**
- * Admin email notifications via Resend.
- *
- * Requires RESEND_API_KEY env var (free tier: 100 emails/day).
- * Sends to ADMIN_EMAIL (defaults to thabisocontractorservices@gmail.com).
- *
- * Fails silently — notification failures must never break the main flow.
- */
-
 const RESEND_API = "https://api.resend.com/emails";
-const ADMIN_EMAIL =
-  process.env.ADMIN_EMAIL || "admin@kznplumbers.co.za";
-const FROM_EMAIL =
-  process.env.FROM_EMAIL || "KZN Plumbers <admin@kznplumbers.co.za>";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@kznplumbers.co.za";
+const FROM_EMAIL = process.env.FROM_EMAIL || "KZN Plumbers <admin@kznplumbers.co.za>";
 
-type NotifyPayload = {
-  subject: string;
-  html: string;
-};
+type NotifyPayload = { subject: string; html: string; replyTo?: string };
 
-async function send({ subject, html }: NotifyPayload) {
+async function send({ subject, html, replyTo }: NotifyPayload): Promise<boolean> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     console.warn("[email] RESEND_API_KEY not set — skipping notification");
-    return;
+    return false;
   }
-
   try {
-    const res = await fetch(RESEND_API, {
+    const response = await fetch(RESEND_API, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: FROM_EMAIL,
-        to: [ADMIN_EMAIL],
-        subject,
-        html,
-      }),
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: FROM_EMAIL, to: [ADMIN_EMAIL], subject, html, ...(replyTo ? { reply_to: replyTo } : {}) }),
     });
-
-    if (!res.ok) {
-      const body = await res.text();
-      console.error("[email] Resend error:", res.status, body);
+    if (!response.ok) {
+      console.error("[email] Resend error:", response.status, await response.text());
+      return false;
     }
-  } catch (err) {
-    console.error("[email] Failed to send notification:", err);
+    return true;
+  } catch (error) {
+    console.error("[email] Failed to send notification:", error);
+    return false;
   }
 }
 
-// ─── Notification templates ───────────────────────────────────────────────────
-
-export function notifyNewRegistration({
-  tradingName,
-  area,
-  email,
-  phone,
-  specialties,
-}: {
-  tradingName: string;
-  area: string;
-  email: string;
-  phone: string;
-  specialties: string[];
-}) {
+export function notifyNewRegistration({ tradingName, area, email, phone, specialties }: { tradingName: string; area: string; email: string; phone: string; specialties: string[] }) {
+  const business = escapeHtml(tradingName);
   return send({
-    subject: `🆕 New plumber registered: ${tradingName}`,
-    html: `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto;">
-        <div style="background: #1A5FBE; color: white; padding: 20px 24px; border-radius: 12px 12px 0 0;">
-          <h2 style="margin: 0; font-size: 18px;">New Plumber Registration</h2>
-        </div>
-        <div style="background: white; padding: 24px; border: 1px solid #E5E7EB; border-top: none; border-radius: 0 0 12px 12px;">
-          <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-              <td style="padding: 8px 0; color: #6B7280; font-size: 14px; width: 120px;">Business</td>
-              <td style="padding: 8px 0; font-size: 14px; font-weight: 600;">${tradingName}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; color: #6B7280; font-size: 14px;">Area</td>
-              <td style="padding: 8px 0; font-size: 14px;">${area}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; color: #6B7280; font-size: 14px;">Email</td>
-              <td style="padding: 8px 0; font-size: 14px;">${email}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; color: #6B7280; font-size: 14px;">Phone</td>
-              <td style="padding: 8px 0; font-size: 14px;">${phone}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; color: #6B7280; font-size: 14px;">Specialties</td>
-              <td style="padding: 8px 0; font-size: 14px;">${specialties.join(", ")}</td>
-            </tr>
-          </table>
-          <div style="margin-top: 20px;">
-            <a href="https://www.kznplumbers.co.za/admin" style="display: inline-block; background: #1A5FBE; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600;">
-              Review in Admin →
-            </a>
-          </div>
-        </div>
-      </div>
-    `,
+    subject: `New plumber application: ${tradingName.slice(0, 80)}`,
+    replyTo: email,
+    html: emailShell("New plumber application", `
+      <p><strong>Business:</strong> ${business}</p>
+      <p><strong>Area:</strong> ${escapeHtml(area)}</p>
+      <p><strong>Email:</strong> ${escapeHtml(email)}</p>
+      <p><strong>Phone:</strong> ${escapeHtml(phone)}</p>
+      <p><strong>Listed services:</strong> ${specialties.map(escapeHtml).join(", ")}</p>
+      <p><a href="https://www.kznplumbers.co.za/admin">Review in admin</a></p>
+    `),
   });
 }
 
-export function notifyNewClaim({
-  tradingName,
-  claimantEmail,
-  phoneEntered,
-  phoneMatch,
-  status,
-}: {
-  tradingName: string;
-  claimantEmail: string;
-  phoneEntered: string;
-  phoneMatch: boolean;
-  status: "auto_approved" | "pending";
-}) {
-  const statusBadge = phoneMatch
-    ? '<span style="background: #D1FAE5; color: #065F46; padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;">Auto-approved ✓</span>'
-    : '<span style="background: #FEF3C7; color: #92400E; padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;">Pending review ⏳</span>';
-
+export function notifyNewClaim({ tradingName, claimantEmail, phoneEntered, phoneMatch, status }: { tradingName: string; claimantEmail: string; phoneEntered: string; phoneMatch: boolean; status: "auto_approved" | "pending" }) {
   return send({
-    subject: `📋 Business claim: ${tradingName} (${status})`,
-    html: `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto;">
-        <div style="background: ${phoneMatch ? "#059669" : "#D97706"}; color: white; padding: 20px 24px; border-radius: 12px 12px 0 0;">
-          <h2 style="margin: 0; font-size: 18px;">Business Claim ${phoneMatch ? "Auto-Approved" : "Needs Review"}</h2>
-        </div>
-        <div style="background: white; padding: 24px; border: 1px solid #E5E7EB; border-top: none; border-radius: 0 0 12px 12px;">
-          <div style="margin-bottom: 16px;">${statusBadge}</div>
-          <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-              <td style="padding: 8px 0; color: #6B7280; font-size: 14px; width: 120px;">Business</td>
-              <td style="padding: 8px 0; font-size: 14px; font-weight: 600;">${tradingName}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; color: #6B7280; font-size: 14px;">Claimant</td>
-              <td style="padding: 8px 0; font-size: 14px;">${claimantEmail}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; color: #6B7280; font-size: 14px;">Phone entered</td>
-              <td style="padding: 8px 0; font-size: 14px;">${phoneEntered}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; color: #6B7280; font-size: 14px;">Phone match</td>
-              <td style="padding: 8px 0; font-size: 14px;">${phoneMatch ? "✅ Yes — matched listing" : "❌ No — needs manual review"}</td>
-            </tr>
-          </table>
-          ${
-            !phoneMatch
-              ? `<div style="margin-top: 20px;">
-              <a href="https://www.kznplumbers.co.za/admin" style="display: inline-block; background: #D97706; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600;">
-                Review Claim in Admin →
-              </a>
-            </div>`
-              : ""
-          }
-        </div>
-      </div>
-    `,
+    subject: `Ownership review: ${tradingName.slice(0, 80)} (${status})`,
+    replyTo: claimantEmail,
+    html: emailShell("Ownership review required", `
+      <p><strong>Business:</strong> ${escapeHtml(tradingName)}</p>
+      <p><strong>Claimant:</strong> ${escapeHtml(claimantEmail)}</p>
+      <p><strong>Phone entered:</strong> ${escapeHtml(phoneEntered)}</p>
+      <p><strong>Public phone comparison:</strong> ${phoneMatch ? "Matched — still requires ownership review" : "Did not match — request additional evidence"}</p>
+      <p><a href="https://www.kznplumbers.co.za/admin?tab=claims">Review claim in admin</a></p>
+    `),
   });
+}
+
+export function sendContactMessage({ name, email, phone, subject, message }: { name: string; email: string; phone?: string; subject: string; message: string }) {
+  return send({
+    subject: `KZN Plumbers contact: ${subject.slice(0, 100)}`,
+    replyTo: email,
+    html: emailShell("Contact form message", `
+      <p><strong>Name:</strong> ${escapeHtml(name)}</p>
+      <p><strong>Email:</strong> ${escapeHtml(email)}</p>
+      <p><strong>Phone:</strong> ${escapeHtml(phone || "Not provided")}</p>
+      <p><strong>Subject:</strong> ${escapeHtml(subject)}</p>
+      <hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0" />
+      <p style="white-space:pre-wrap">${escapeHtml(message)}</p>
+    `),
+  });
+}
+
+function emailShell(title: string, body: string): string {
+  return `<div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;color:#0f172a">
+    <div style="background:#0f172a;color:#fff;padding:18px 22px"><h2 style="margin:0;font-size:19px">${escapeHtml(title)}</h2></div>
+    <div style="border:1px solid #e2e8f0;border-top:0;padding:22px;line-height:1.55">${body}</div>
+  </div>`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#039;", '"': "&quot;" })[character] || character);
 }

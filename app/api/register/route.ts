@@ -1,175 +1,101 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import "server-only";
+import { randomUUID } from "node:crypto";
+import { NextRequest } from "next/server";
+import { z } from "zod";
 import { notifyNewRegistration } from "@/lib/email";
+import { KZN_AREAS, SPECIALTIES, formatWhatsApp, isValidSAPhone } from "@/lib/utils";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { AccessError, privateJson, requireSameOrigin, requireUser } from "@/lib/server-access";
+import { authFlowFailure as accessFailure, missingAuthFlowColumn, readAuthFlowJson } from "@/lib/auth-flow-input";
+import { ensureAuthFlowProfile } from "@/lib/auth-flow-records";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+const BusinessSchema = z.object({
+  trading_name: z.string().trim().min(2).max(160),
+  area: z.enum(KZN_AREAS),
+  hourly_rate: z.coerce.number().int().min(0).max(100000).nullable().optional(),
+  specialties: z.array(z.enum(SPECIALTIES)).min(1).max(SPECIALTIES.length),
+  is_emergency: z.boolean().default(false),
+  google_calendar_url: z.string().trim().max(500).refine((value) => {
+    if (!value) return true;
+    try { const url = new URL(value); return url.protocol === "https:" && url.hostname === "calendar.google.com" && !url.username && !url.password; } catch { return false; }
+  }, "Use a Google Calendar HTTPS booking URL.").optional(),
+  google_place_id: z.string().trim().max(250).optional(),
+  pirb_number: z.string().trim().max(80).optional(),
+});
 
-/**
- * POST /api/register
- *
- * Step 2 of registration — called AFTER the client-side signUp() which
- * creates the auth user and sends the confirmation email.
- *
- * Uses the service-role client to bypass RLS.
- *
- * Body: {
- *   email: string,
- *   phone: string,
- *   whatsapp: string,
- *   business: { trading_name, area, hourly_rate, specialties, is_emergency,
- *               google_calendar_url?, google_place_id?, pirb_number? }
- * }
- */
-export async function POST(req: NextRequest) {
+const Schema = z.object({
+  full_name: z.string().trim().min(2).max(120),
+  email: z.string().trim().email().max(200),
+  phone: z.string().trim().max(30).regex(/^[+\d\s()-]+$/).refine(isValidSAPhone, "Invalid South African cellphone number"),
+  whatsapp: z.string().trim().max(30).regex(/^[+\d\s()-]+$/).refine(isValidSAPhone, "Invalid South African WhatsApp number"),
+  business: BusinessSchema,
+});
+
+export async function POST(request: NextRequest) {
   try {
-    const body = await req.json();
-    const { email, phone, whatsapp, business } = body;
-
-    // ── Validate ──────────────────────────────────────────────────────────
-    if (!email) {
-      return NextResponse.json({ error: "Missing email" }, { status: 400 });
+    requireSameOrigin(request);
+    // Signup happens through the cookie-aware browser client, then email confirmation.
+    // This endpoint only creates a business for the verified, signed-in identity.
+    const user = await requireUser(request);
+    const parsed = Schema.safeParse(await readAuthFlowJson(request, 16384));
+    if (!parsed.success) return privateJson({ error: "Check the registration details.", issues: parsed.error.flatten().fieldErrors }, 400);
+    const input = parsed.data;
+    if (!user.email || input.email.toLowerCase() !== user.email.toLowerCase()) {
+      return privateJson({ error: "Use the email address for your signed-in account." }, 400);
     }
-    if (!business?.trading_name || !business?.area || !business?.specialties?.length) {
-      return NextResponse.json(
-        { error: "Missing required business fields (trading name, area, specialties)" },
-        { status: 400 },
-      );
+    const admin = getSupabaseAdmin();
+    const existing = await admin.from("plumbers").select("id").eq("profile_id", user.id).limit(1);
+    if (existing.error) throw new AccessError("Cannot check your business application right now.", 503);
+    if (existing.data?.length) return privateJson({ error: "This account already has a business profile. Continue from your dashboard.", plumberId: existing.data[0].id }, 409);
+
+    await ensureAuthFlowProfile(user, input.full_name, "plumber");
+    // No role appears in an UPDATE: existing homeowner/plumber/admin roles survive,
+    // including a concurrent administrator promotion. Only this verified id is changed.
+    const profilePayload: Record<string, unknown> = {
+      full_name: input.full_name, email: user.email.toLowerCase(),
+      phone_number: formatWhatsApp(input.phone), whatsapp_number: formatWhatsApp(input.whatsapp),
+    };
+    let profileResult = await admin.from("profiles").update(profilePayload).eq("id", user.id);
+    if (missingAuthFlowColumn(profileResult.error, "profiles", ["phone_number"])) {
+      delete profilePayload.phone_number;
+      profilePayload.phone = formatWhatsApp(input.phone);
+      profileResult = await admin.from("profiles").update(profilePayload).eq("id", user.id);
     }
+    if (profileResult.error) throw new AccessError("Your contact details could not be saved. The business application has not been submitted.", 503);
 
-    // ── 1. Find the auth user by email ────────────────────────────────────
-    // Use profiles table (auto-created by trigger) instead of listUsers()
-    // which only returns the first page (50 users).
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("profiles")
-      .select("id, email")
-      .eq("email", email.toLowerCase())
-      .maybeSingle();
-
-    // Fallback: if profile not found (trigger may not have fired yet or
-    // email casing differs), search auth users directly.
-    let userId: string | null = profile?.id ?? null;
-
-    if (!userId) {
-      const { data: usersData } = await supabaseAdmin.auth.admin.listUsers({
-        perPage: 1000,
-      });
-      const match = usersData?.users?.find(
-        (u) => u.email?.toLowerCase() === email.toLowerCase(),
-      );
-      userId = match?.id ?? null;
+    const id = randomUUID();
+    const businessPayload: Record<string, unknown> = {
+      id, profile_id: user.id,
+      trading_name: input.business.trading_name,
+      // Random suffix avoids same-name slug races without a new index or schema.
+      slug: `${input.business.trading_name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 130) || "business"}-${id.slice(0, 8)}`,
+      area: input.business.area,
+      hourly_rate: input.business.hourly_rate || null,
+      specialties: [...new Set(input.business.specialties)],
+      is_emergency: input.business.is_emergency,
+      google_calendar_url: input.business.google_calendar_url || null,
+      google_place_id: input.business.google_place_id || null,
+      pirb_number: input.business.pirb_number || null,
+      whatsapp_number: formatWhatsApp(input.whatsapp),
+      is_certified: false, is_verified: false, record_status: "pending",
+      verification_state: "business_claimed", accepts_new_work: true,
+      availability_status: "available",
+    };
+    const optional = ["record_status", "verification_state", "accepts_new_work"];
+    let inserted = await admin.from("plumbers").insert(businessPayload).select("id").single();
+    for (let attempt = 0; inserted.error && attempt < optional.length; attempt++) {
+      const missing = missingAuthFlowColumn(inserted.error, "plumbers", optional);
+      if (!missing || !(missing in businessPayload)) break;
+      delete businessPayload[missing];
+      inserted = await admin.from("plumbers").insert(businessPayload).select("id").single();
     }
-
-    if (!userId) {
-      console.error(`[register] User not found for email: ${email}`);
-      return NextResponse.json(
-        { error: "Account not found. Please try registering again, or log in if you already have an account." },
-        { status: 404 },
-      );
+    if (inserted.error?.code === "23505") {
+      const raced = await admin.from("plumbers").select("id").eq("profile_id", user.id).limit(1);
+      if (!raced.error && raced.data?.length) return privateJson({ error: "This account already has a business profile. Continue from your dashboard.", plumberId: raced.data[0].id }, 409);
     }
+    if (inserted.error || !inserted.data) throw new AccessError("Contact details were saved, but the business application could not be confirmed. Check your dashboard before retrying.", 503);
 
-    // ── 2. Ensure profile row exists (trigger may have failed or row was deleted) ──
-    const { data: existingProfile } = await supabaseAdmin
-      .from("profiles")
-      .select("id")
-      .eq("id", userId)
-      .maybeSingle();
-
-    if (!existingProfile) {
-      // Profile missing — recreate it
-      await supabaseAdmin.from("profiles").insert({
-        id: userId,
-        email: email.toLowerCase(),
-        full_name: business.trading_name,
-        role: "plumber",
-        phone_number: phone || null,
-        whatsapp_number: whatsapp || null,
-      });
-    } else {
-      // Profile exists — update phone numbers
-      await supabaseAdmin
-        .from("profiles")
-        .update({
-          phone_number: phone || null,
-          whatsapp_number: whatsapp || null,
-        })
-        .eq("id", userId);
-    }
-
-    // ── 3. Check if plumber row already exists (idempotent) ───────────────
-    const { data: existing } = await supabaseAdmin
-      .from("plumbers")
-      .select("id")
-      .eq("profile_id", userId)
-      .maybeSingle();
-
-    if (existing) {
-      return NextResponse.json({
-        success: true,
-        message: "Business profile already exists.",
-        plumberId: existing.id,
-      });
-    }
-
-    // ── 4. Insert the plumbers row (bypasses RLS via service role) ─────────
-    const { data: newPlumber, error: plumberError } = await supabaseAdmin
-      .from("plumbers")
-      .insert({
-        profile_id: userId,
-        trading_name: business.trading_name,
-        area: business.area,
-        hourly_rate: business.hourly_rate || null,
-        specialties: business.specialties,
-        is_emergency: business.is_emergency ?? false,
-        google_calendar_url: business.google_calendar_url || null,
-        google_place_id: business.google_place_id || null,
-        pirb_number: business.pirb_number || null,
-        whatsapp_number: normalisePhone(whatsapp),
-        is_certified: !!business.pirb_number,
-        is_verified: false,
-        availability_status: "available",
-      })
-      .select("id")
-      .single();
-
-    if (plumberError) {
-      console.error("[register] Plumber insert error:", plumberError);
-      return NextResponse.json(
-        { error: `Failed to create business profile: ${plumberError.message}` },
-        { status: 500 },
-      );
-    }
-
-    // ── 5. Notify admin (fire-and-forget) ─────────────────────────────────
-    notifyNewRegistration({
-      tradingName: business.trading_name,
-      area: business.area,
-      email,
-      phone: phone || whatsapp || "—",
-      specialties: business.specialties,
-    }).catch(() => {});
-
-    return NextResponse.json({
-      success: true,
-      message: "Registration complete. Your application is under review.",
-      plumberId: newPlumber.id,
-    });
-  } catch (err) {
-    console.error("[register] Unexpected error:", err);
-    return NextResponse.json(
-      { error: "Something went wrong. Please try again or contact support." },
-      { status: 500 },
-    );
-  }
-}
-
-/** Strip non-digits, normalise to 27XXXXXXXXX format */
-function normalisePhone(phone: string): string {
-  if (!phone) return "";
-  let digits = phone.replace(/\D/g, "");
-  if (digits.startsWith("0")) digits = "27" + digits.slice(1);
-  if (!digits.startsWith("27") && digits.length === 9) digits = "27" + digits;
-  return digits;
+    void notifyNewRegistration({ tradingName: input.business.trading_name, area: input.business.area, email: user.email, phone: input.phone, specialties: input.business.specialties }).catch(() => {});
+    return privateJson({ success: true, plumberId: inserted.data.id, status: "pending", message: "Application saved for review. Files are uploaded separately." }, 201);
+  } catch (error) { return accessFailure(error); }
 }

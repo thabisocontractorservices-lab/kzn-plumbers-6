@@ -1,19 +1,24 @@
 import { RegisterWizard } from "@/components/RegisterWizard";
-import { supabase } from "@/src/supabaseClient";
+import { getPublicSupabase } from "@/lib/supabase/public";
 
 export const metadata = {
-  title: "List Your Business — KZN Plumbers Directory",
+  title: "List Your Plumbing Business | KZN Plumbers Directory",
+  description: "Submit a KwaZulu-Natal plumbing business for review or manage an existing listing.",
+  alternates: { canonical: "/register" },
+  robots: { index: false, follow: true },
 };
 
 // Refresh the headline number every 10 minutes
 export const revalidate = 600;
 
 export default async function RegisterPage() {
-  // Pull the real count of verified plumbers — no hardcoded number
-  const { count } = await supabase
-    .from("plumbers")
-    .select("*", { count: "exact", head: true })
-    .eq("is_verified", true);
+  const supabase = getPublicSupabase();
+  const { count } = supabase
+    ? await supabase
+        .from("plumbers")
+        .select("id", { count: "exact", head: true })
+        .eq("is_verified", true)
+    : { count: 0 };
 
   const plumberCount = count ?? 0;
   // Round to nearest 10 for a cleaner social-proof line (e.g. 1,217 → "1,200+")
@@ -28,7 +33,7 @@ export default async function RegisterPage() {
           List your plumbing business
         </h1>
         <p className="text-center text-gray-500 mb-8 text-sm">
-          Join {rounded.toLocaleString()}+ verified plumbers across KZN. It's free.
+          Add your business to {rounded.toLocaleString()}+ published KZN directory records. Listing is free.
         </p>
         <RegisterWizard />
       </div>

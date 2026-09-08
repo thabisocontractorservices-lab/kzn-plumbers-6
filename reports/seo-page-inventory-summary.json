@@ -1,0 +1,12 @@
+{
+  "generatedAt": "2026-08-16T22:09:44.610Z",
+  "readOnly": true,
+  "total": 563,
+  "bySuggestion": {
+    "keep_review": 311,
+    "merge_review": 204,
+    "noindex_review": 44,
+    "remove_review": 4
+  },
+  "note": "Suggestions are triage only. Add GSC demand, backlinks, conversion, and live inventory before approving redirects or removals."
+}

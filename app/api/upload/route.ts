@@ -1,301 +1,110 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import "server-only";
+import { randomUUID } from "node:crypto";
+import { NextRequest } from "next/server";
+import { z } from "zod";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { AccessError, privateJson, requireSameOrigin, requireUser } from "@/lib/server-access";
+import { authFlowFailure as accessFailure, readAuthFlowFormData, readAuthFlowJson } from "@/lib/auth-flow-input";
+import { authFlowStoragePath, requireAuthFlowFileManager } from "@/lib/auth-flow-storage";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+const IdSchema = z.string().uuid();
+const PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const CERT_TYPES = new Set([...PHOTO_TYPES, "application/pdf"]);
+const MAX_BYTES = 10 * 1024 * 1024;
 
-/**
- * POST /api/upload
- *
- * Uploads a file to Supabase Storage and inserts the corresponding DB row.
- *
- * FormData fields:
- *   file          — the file blob
- *   type          — "photo" | "profile_photo" | "cert"
- *   plumber_id    — the plumber's UUID
- *   email         — fallback identifier (for registration before session exists)
- *   cert_name     — label for certifications (e.g. "PIRB Certificate")
- *   caption       — optional caption for photos
- *
- * Auth: either Bearer token or email lookup (registration flow).
- */
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const formData = await req.formData();
-    const file = formData.get("file") as File | null;
-    const type = formData.get("type") as string; // photo | profile_photo | cert
-    const plumberId = formData.get("plumber_id") as string | null;
-    const email = formData.get("email") as string | null;
-    const certName = formData.get("cert_name") as string | null;
-    const caption = formData.get("caption") as string | null;
-
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
-    }
-    if (!type || !["photo", "profile_photo", "cert"].includes(type)) {
-      return NextResponse.json(
-        { error: "Invalid type. Must be photo, profile_photo, or cert" },
-        { status: 400 },
-      );
-    }
-
-    // ── Resolve plumber ID ────────────────────────────────────────────────
-    let resolvedPlumberId = plumberId;
-
-    if (!resolvedPlumberId && email) {
-      // Registration flow — look up plumber by email → profile → plumber
-      // Use profiles table instead of listUsers() (which only returns first 50)
-      const { data: profile } = await supabaseAdmin
-        .from("profiles")
-        .select("id")
-        .eq("email", email.toLowerCase())
-        .maybeSingle();
-
-      let profileId = profile?.id ?? null;
-
-      // Fallback: search auth users
-      if (!profileId) {
-        const { data: usersData } = await supabaseAdmin.auth.admin.listUsers({
-          perPage: 1000,
-        });
-        const match = usersData?.users?.find(
-          (u) => u.email?.toLowerCase() === email.toLowerCase(),
-        );
-        profileId = match?.id ?? null;
-      }
-
-      if (profileId) {
-        const { data: p } = await supabaseAdmin
-          .from("plumbers")
-          .select("id")
-          .eq("profile_id", profileId)
-          .maybeSingle();
-        resolvedPlumberId = p?.id ?? null;
-      }
-    }
-
-    // Also try auth token if provided
-    if (!resolvedPlumberId) {
-      const authHeader = req.headers.get("authorization");
-      if (authHeader?.startsWith("Bearer ")) {
-        const token = authHeader.replace("Bearer ", "");
-        const { data: { user } } = await supabaseAdmin.auth.getUser(token);
-        if (user) {
-          const { data: p } = await supabaseAdmin
-            .from("plumbers")
-            .select("id")
-            .eq("profile_id", user.id)
-            .maybeSingle();
-          resolvedPlumberId = p?.id ?? null;
-        }
-      }
-    }
-
-    if (!resolvedPlumberId) {
-      return NextResponse.json(
-        { error: "Could not resolve plumber. Provide plumber_id or valid email/token." },
-        { status: 400 },
-      );
-    }
-
-    // ── Determine bucket and path ─────────────────────────────────────────
+    requireSameOrigin(request);
+    await requireUser(request);
+    const formData = await readAuthFlowFormData(request, MAX_BYTES + 65536);
+    const file = formData.get("file");
+    const type = String(formData.get("type") || "");
+    const plumberId = String(formData.get("plumber_id") || "");
+    const certName = String(formData.get("cert_name") || "").trim().slice(0, 120);
+    const caption = String(formData.get("caption") || "").trim().slice(0, 300);
+    if (!(file instanceof File)) return privateJson({ error: "No file provided." }, 400);
+    if (!IdSchema.safeParse(plumberId).success) return privateJson({ error: "Invalid plumber id." }, 400);
+    if (!["photo", "profile_photo", "cert"].includes(type)) return privateJson({ error: "Invalid upload type." }, 400);
+    if (file.size <= 0 || file.size > MAX_BYTES) return privateJson({ error: "Files must be smaller than 10 MB." }, 400);
+    if (!(type === "cert" ? CERT_TYPES : PHOTO_TYPES).has(file.type)) return privateJson({ error: "Use JPEG, PNG, WebP, or PDF certificates." }, 400);
+    // Unverified signup upload tokens no longer bypass owner/admin authentication.
+    const { admin } = await requireAuthFlowFileManager(request, plumberId);
     const bucket = type === "cert" ? "certs" : "photos";
-    const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
-    const timestamp = Date.now();
-    const safeName = `${timestamp}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-    const storagePath = `${resolvedPlumberId}/${safeName}`;
-
-    // ── Upload to Supabase Storage ────────────────────────────────────────
-    const arrayBuf = await file.arrayBuffer();
-    const { error: uploadError } = await supabaseAdmin.storage
-      .from(bucket)
-      .upload(storagePath, arrayBuf, {
-        contentType: file.type,
-        upsert: false,
-      });
-
-    if (uploadError) {
-      console.error("Upload error:", uploadError);
-      return NextResponse.json(
-        { error: `Upload failed: ${uploadError.message}` },
-        { status: 500 },
-      );
+    if (bucket === "certs") {
+      const state = await admin.storage.getBucket("certs");
+      if (state.error || state.data?.public !== false) throw new AccessError("Private certificate storage could not be verified. Upload refused.", 503);
     }
+    const storagePath = `${plumberId}/${Date.now()}_${randomUUID()}.${extensionFor(file.type)}`;
+    const bytes = await file.arrayBuffer();
+    if (!matchesFileSignature(bytes, file.type)) return privateJson({ error: "File contents do not match the declared type." }, 400);
+    const uploaded = await admin.storage.from(bucket).upload(storagePath, bytes, { contentType: file.type, upsert: false });
+    if (uploaded.error) throw new AccessError("File upload could not be confirmed. Check your uploads before retrying.", 503);
 
-    // ── Build the public/signed URL ───────────────────────────────────────
-    let fileUrl: string;
-    if (bucket === "photos") {
-      // photos bucket is public
-      const { data: urlData } = supabaseAdmin.storage
-        .from(bucket)
-        .getPublicUrl(storagePath);
-      fileUrl = urlData.publicUrl;
-    } else {
-      // certs bucket is private — use a long-lived signed URL (1 year)
-      const { data: signedData, error: signedError } = await supabaseAdmin.storage
-        .from(bucket)
-        .createSignedUrl(storagePath, 60 * 60 * 24 * 365);
-      if (signedError || !signedData?.signedUrl) {
-        console.error("Signed URL error:", signedError);
-        fileUrl = storagePath; // fallback
-      } else {
-        fileUrl = signedData.signedUrl;
+    const publicUrl = bucket === "photos" ? admin.storage.from(bucket).getPublicUrl(storagePath).data.publicUrl : null;
+    const id = randomUUID();
+    const result = type === "cert"
+      ? await admin.from("certifications").insert({ id, plumber_id: plumberId, cert_name: certName || file.name.replace(/\.[^.]+$/, "").slice(0, 120) || "Certificate", cert_file_url: storagePath }).select("id").single()
+      : await admin.from("photos").insert({ id, plumber_id: plumberId, photo_url: publicUrl, is_profile_photo: type === "profile_photo", caption: caption || null }).select("id").single();
+    if (result.error || !result.data) {
+      // Only clean up after a definite DB rejection. A transport timeout can follow
+      // a successful commit; deleting bytes in that case would break the attachment.
+      const definiteRejection = /^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(result.error?.code || "");
+      if (definiteRejection) {
+        const cleanup = await admin.storage.from(bucket).remove([storagePath]);
+        if (cleanup.error) return privateJson({ error: "File attachment failed and its stored bytes could not be removed. Contact support before retrying." }, 503);
       }
+      throw new AccessError("File attachment could not be confirmed. Check your uploads before retrying.", 503);
     }
-
-    // ── Insert DB row ─────────────────────────────────────────────────────
-    if (type === "cert") {
-      const { error: dbError } = await supabaseAdmin
-        .from("certifications")
-        .insert({
-          plumber_id: resolvedPlumberId,
-          cert_name: certName || file.name.replace(/\.[^.]+$/, ""),
-          cert_file_url: fileUrl,
-        });
-
-      if (dbError) {
-        console.error("Cert DB insert error:", dbError);
-        return NextResponse.json(
-          { error: `File uploaded but DB insert failed: ${dbError.message}` },
-          { status: 500 },
-        );
-      }
-    } else {
-      // photo or profile_photo
-      const isProfile = type === "profile_photo";
-
-      // If setting profile photo, unset any existing one first
-      if (isProfile) {
-        await supabaseAdmin
-          .from("photos")
-          .update({ is_profile_photo: false })
-          .eq("plumber_id", resolvedPlumberId)
-          .eq("is_profile_photo", true);
-      }
-
-      const { error: dbError } = await supabaseAdmin
-        .from("photos")
-        .insert({
-          plumber_id: resolvedPlumberId,
-          photo_url: fileUrl,
-          is_profile_photo: isProfile,
-          caption: caption || null,
-        });
-
-      if (dbError) {
-        console.error("Photo DB insert error:", dbError);
-        return NextResponse.json(
-          { error: `File uploaded but DB insert failed: ${dbError.message}` },
-          { status: 500 },
-        );
-      }
+    let warning: string | undefined;
+    if (type === "profile_photo") {
+      // Attach the new photo before changing existing ones. Never remove the old
+      // profile selection when the new attachment failed. This is not a transaction.
+      const selection = await admin.from("photos").update({ is_profile_photo: false }).eq("plumber_id", plumberId).neq("id", id).eq("is_profile_photo", true);
+      if (selection.error) warning = "Photo saved, but the previous profile-photo selection could not be cleared. Check your uploads.";
     }
-
-    return NextResponse.json({
-      success: true,
-      url: fileUrl,
-      type,
-      plumber_id: resolvedPlumberId,
-    });
-  } catch (err) {
-    console.error("Upload route error:", err);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
-  }
+    return privateJson({ success: true, id, url: type === "cert" ? `/api/certifications/${id}` : publicUrl, type, plumber_id: plumberId, ...(warning ? { warning } : {}) }, 201);
+  } catch (error) { return accessFailure(error); }
 }
 
-/**
- * DELETE /api/upload
- * Body: { type: "photo"|"cert", id: string, plumber_id: string }
- * Auth: Bearer token
- */
-export async function DELETE(req: NextRequest) {
+export async function DELETE(request: NextRequest) {
   try {
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const token = authHeader.replace("Bearer ", "");
-    const { data: { user } } = await supabaseAdmin.auth.getUser(token);
-    if (!user) {
-      return NextResponse.json({ error: "Invalid session" }, { status: 401 });
-    }
-
-    const { type, id } = await req.json();
-
-    // Verify ownership
-    const { data: plumber } = await supabaseAdmin
-      .from("plumbers")
-      .select("id")
-      .eq("profile_id", user.id)
-      .maybeSingle();
-
-    if (!plumber) {
-      return NextResponse.json({ error: "No plumber profile found" }, { status: 403 });
-    }
-
-    if (type === "cert") {
-      // Get the cert to find the storage path
-      const { data: cert } = await supabaseAdmin
-        .from("certifications")
-        .select("id, cert_file_url")
-        .eq("id", id)
-        .eq("plumber_id", plumber.id)
-        .single();
-
-      if (!cert) {
-        return NextResponse.json({ error: "Certification not found" }, { status: 404 });
-      }
-
-      // Delete from storage (extract path from URL)
-      const path = extractStoragePath(cert.cert_file_url, "certs");
-      if (path) {
-        await supabaseAdmin.storage.from("certs").remove([path]);
-      }
-
-      await supabaseAdmin.from("certifications").delete().eq("id", id);
-    } else {
-      const { data: photo } = await supabaseAdmin
-        .from("photos")
-        .select("id, photo_url")
-        .eq("id", id)
-        .eq("plumber_id", plumber.id)
-        .single();
-
-      if (!photo) {
-        return NextResponse.json({ error: "Photo not found" }, { status: 404 });
-      }
-
-      const path = extractStoragePath(photo.photo_url, "photos");
-      if (path) {
-        await supabaseAdmin.storage.from("photos").remove([path]);
-      }
-
-      await supabaseAdmin.from("photos").delete().eq("id", id);
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (err) {
-    console.error("Delete upload error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+    requireSameOrigin(request);
+    await requireUser(request);
+    const parsed = z.object({ type: z.enum(["cert", "photo"]), id: IdSchema }).safeParse(await readAuthFlowJson(request, 4096));
+    if (!parsed.success) return privateJson({ error: "Invalid file deletion request." }, 400);
+    const { type, id } = parsed.data;
+    const admin = getSupabaseAdmin();
+    const table = type === "cert" ? "certifications" : "photos";
+    const urlColumn = type === "cert" ? "cert_file_url" : "photo_url";
+    const record = await admin.from(table).select(`id, plumber_id, ${urlColumn}`).eq("id", id).maybeSingle();
+    if (record.error) throw new AccessError("Cannot check this file right now.", 503);
+    if (!record.data) return privateJson({ error: "File record not found. Refresh your uploads." }, 404);
+    await requireAuthFlowFileManager(request, record.data.plumber_id);
+    const bucket = type === "cert" ? "certs" : "photos";
+    const path = authFlowStoragePath(String((record.data as Record<string, unknown>)[urlColumn] || ""), bucket, record.data.plumber_id);
+    if (!path) return privateJson({ error: "This legacy file path needs administrator attention. Nothing was deleted." }, 422);
+    const removed = await admin.storage.from(bucket).remove([path]);
+    if (removed.error) throw new AccessError("Stored file could not be removed. The file record has been kept.", 503);
+    const deleted = await admin.from(table).delete().eq("id", id).eq("plumber_id", record.data.plumber_id).select("id");
+    if (deleted.error) return privateJson({ error: "File bytes were removed, but its record could not be removed. Refresh and retry or contact support." }, 503);
+    return privateJson({ success: true });
+  } catch (error) { return accessFailure(error); }
 }
 
-/** Try to extract the storage path from a Supabase URL */
-function extractStoragePath(url: string, bucket: string): string | null {
-  try {
-    const marker = `/storage/v1/object/public/${bucket}/`;
-    const signedMarker = `/storage/v1/object/sign/${bucket}/`;
-    let idx = url.indexOf(marker);
-    if (idx >= 0) return url.slice(idx + marker.length).split("?")[0];
-    idx = url.indexOf(signedMarker);
-    if (idx >= 0) return url.slice(idx + signedMarker.length).split("?")[0];
-    return null;
-  } catch {
-    return null;
+function matchesFileSignature(buffer: ArrayBuffer, mime: string): boolean {
+  const bytes = new Uint8Array(buffer.slice(0, 16));
+  if (mime === "image/jpeg") return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (mime === "image/png") return bytes.length >= 8 && bytes.slice(0, 8).every((value, index) => value === [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a][index]);
+  if (mime === "image/webp") {
+    return String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP";
   }
+  if (mime === "application/pdf") return String.fromCharCode(...bytes.slice(0, 5)) === "%PDF-";
+  return false;
+}
+
+function extensionFor(mime: string): string {
+  if (mime === "image/jpeg") return "jpg";
+  if (mime === "image/png") return "png";
+  if (mime === "image/webp") return "webp";
+  return "pdf";
 }

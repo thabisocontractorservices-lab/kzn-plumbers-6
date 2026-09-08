@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
+import { ContactForm } from "@/components/ContactForm";
 
 export const metadata: Metadata = {
   title: "Contact Us — KZN Plumbers Directory",
   description:
-    "Get in touch with KZN Plumbers Directory. Whether you need help with your listing or want to report an issue, we're here to help.",
+    "Contact KZN Plumbers Directory about listing help, corrections, complaints, claims, privacy or partnerships.",
+  alternates: { canonical: "/contact" },
 };
 
-export default function ContactPage() {
+export default async function ContactPage({searchParams}:{searchParams:Promise<{review?:string|string[]}>}) {
+  const input=(await searchParams).review;
+  const reviewId=typeof input==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input)?input:undefined;
   return (
     <>
       {/* Hero */}
@@ -26,71 +30,7 @@ export default function ContactPage() {
           {/* Contact form */}
           <div>
             <h2 className="font-display text-xl font-bold mb-4">Send us a message</h2>
-            <form
-              action="https://formsubmit.co/thabiso@kznplumbers.co.za"
-              method="POST"
-              className="space-y-4"
-            >
-              <input type="hidden" name="_subject" value="New contact form submission — KZN Plumbers" />
-              <input type="hidden" name="_captcha" value="false" />
-              <input type="hidden" name="_next" value="https://www.kznplumbers.co.za/contact?sent=true" />
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold mb-1 block">Full name *</label>
-                  <input
-                    required
-                    name="name"
-                    type="text"
-                    placeholder="Your name"
-                    className="input"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold mb-1 block">Email *</label>
-                  <input
-                    required
-                    name="email"
-                    type="email"
-                    placeholder="you@example.com"
-                    className="input"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs font-semibold mb-1 block">Phone</label>
-                <input
-                  name="phone"
-                  type="tel"
-                  placeholder="082 123 4567"
-                  className="input"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold mb-1 block">Subject *</label>
-                <select name="subject" required className="input">
-                  <option value="">Select a topic</option>
-                  <option value="Listing help">Help with my listing</option>
-                  <option value="Report issue">Report an issue</option>
-                  <option value="Claim listing">Claim my business</option>
-                  <option value="Partnership">Partnership enquiry</option>
-                  <option value="General">General question</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-semibold mb-1 block">Message *</label>
-                <textarea
-                  required
-                  name="message"
-                  rows={5}
-                  placeholder="How can we help you?"
-                  className="input resize-none"
-                />
-              </div>
-              <button type="submit" className="btn-primary w-full">
-                Send Message
-              </button>
-            </form>
+            <ContactForm reviewId={reviewId} />
           </div>
 
           {/* Contact info */}

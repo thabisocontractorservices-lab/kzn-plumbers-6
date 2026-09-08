@@ -1,112 +1,73 @@
-# Setup Guide
+# Historical local setup reference
 
-A step-by-step setup walkthrough for **KZN Plumbers Directory**.
+For the current code-only release, follow GO-LIVE-2026-09-08.md. The owner does not need Docker, another database, local tests or migration 007. The commands below are optional developer reference; the old migrations are incomplete for recreating the production schema from scratch and are not a one-click installer.
 
-## 1. Supabase project
-
-1. Go to https://app.supabase.com → New Project
-2. Choose a region close to ZA (Frankfurt or São Paulo)
-3. Save your `Project URL` and `anon` key for `.env.local`
-4. From Settings → API, also copy `service_role` key (server-only)
-
-### Apply migrations
+## 1. Install and configure
 
 ```bash
-# Install the Supabase CLI
-npm i -g supabase
-
-# Link to your hosted project
-supabase login
-supabase link --project-ref <your-project-ref>
-
-# Apply migrations
-supabase db push
+npm ci
+cp .env.example .env.local
+npm run dev
 ```
 
-OR for local dev:
-```bash
-supabase start          # spins up local Postgres + Studio
-supabase db reset       # applies all migrations
-```
+Fill `.env.local` with credentials from your own services. Never commit the file.
 
-### Storage buckets
+## 2. Supabase
 
-The migrations create three buckets:
-- `certs` (private — credential PDFs)
-- `photos` (public — work gallery)
-- `avatars` (public — profile photos)
+For a fresh Supabase project:
 
-If they don't appear, create them manually via Storage in the Supabase dashboard.
+1. Link the Supabase CLI to the new project.
+2. Apply the migrations in numeric order.
+3. Confirm `photos` is public and `certs` is private.
+4. Configure email confirmation and Google OAuth in Supabase Auth.
+5. Add the production and preview callback URLs.
+6. Create the first account normally, then assign the admin role using the Supabase SQL Editor.
 
-## 2. Google Cloud project
+For an existing KZN Plumbers database:
 
-1. Go to https://console.cloud.google.com → New Project
-2. Enable APIs:
-   - **Places API (New)** — for live business reviews
-   - **Calendar API** — optional, for embedded scheduling
-3. Credentials → Create Credentials → API Key
-4. Restrict the key:
-   - HTTP referrers: `https://kznplumbers.co.za/*`, `http://localhost:3000/*`
-   - APIs: Places API (New) only
-5. Copy the key into `.env.local` as `GOOGLE_API_KEY`
+1. Export a backup.
+2. Run `scripts/007_growth_trust_seo_dry_run.sql`.
+3. Resolve blockers identified by the dry-run.
+4. Test the new code against staging before the migration.
+5. Apply `supabase/migrations/007_growth_trust_seo.sql` in staging and repeat the tests.
+6. In production, promote the backward-compatible code first, smoke-test it, then apply the migration and retest.
 
-### Google OAuth (for user sign-in)
+## 3. Google and email services
 
-1. Credentials → Create Credentials → OAuth client ID
-2. Application type: Web application
-3. Authorized redirect URIs:
-   - `https://<your-project-ref>.supabase.co/auth/v1/callback`
-   - `http://localhost:54321/auth/v1/callback` (local dev)
-4. Copy `Client ID` and `Client Secret`
-5. In Supabase → Authentication → Providers → Google → enable, paste the credentials
+- Enable Places API New for the server-side Google review refresh.
+- Restrict the Google key to only the APIs the project uses.
+- Configure Google OAuth through Supabase Auth.
+- Verify the sending domain in Resend.
+- Configure Resend SMTP in Supabase if auth emails should use the KZN Plumbers domain.
 
-## 3. Vercel deployment
+## 4. GitHub and Vercel
+
+1. Push the contents of this project folder to GitHub.
+2. Import that repository into Vercel.
+3. Use Node.js 20.9 or newer.
+4. Add all required Vercel environment variables from `.env.example`.
+5. Deploy to a preview URL first.
+6. Run the staging checklist in `DEPLOYMENT-RUNBOOK.md`.
+7. Promote the tested preview to production.
+
+## 5. Required checks
 
 ```bash
-# Push your code to GitHub first
-git init
-git add .
-git commit -m "Initial KZN Plumbers Directory"
-git remote add origin git@github.com:you/kzn-plumbers.git
-git push -u origin main
+npm run lint
+npm run typecheck
+npm test
+npm run build
 ```
 
-1. https://vercel.com/new → import the repo
-2. Framework preset: Next.js (auto-detected)
-3. Environment Variables — add all 6 from `.env.example`
-4. Deploy
-5. Project → Settings → Domains → add `kznplumbers.co.za`
-6. The cron at `/api/cron/refresh-google` runs daily at 03:00 UTC (see `vercel.json`). Vercel injects `Authorization: Bearer ${CRON_SECRET}` automatically.
-
-## 4. Seed an admin
+After starting the production build locally on port 3100:
 
 ```bash
-# After signing up your first user via /register or /login
-psql "postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres" \
-  -c "update profiles set role='admin' where email='you@example.com';"
+npm run start -- -p 3100
+npm run verify:preview
 ```
 
-OR run `supabase/seed.sql` after editing the email.
+## 6. Scheduled jobs
 
-## 5. Test the flow end-to-end
+`vercel.json` schedules the Google review refresh route. Confirm `CRON_SECRET` is set and verify the request uses the expected authorization header.
 
-- [ ] Register a plumber via `/register`
-- [ ] Login as admin and approve them via `/admin`
-- [ ] Verified plumber appears on `/`
-- [ ] Open their profile, submit a review and a booking
-- [ ] Login as the plumber, check `/dashboard` for the booking
-- [ ] Toggle availability, verify the badge changes on their card
-- [ ] Trigger the cron manually:
-      `curl -H "Authorization: Bearer $CRON_SECRET" https://kznplumbers.co.za/api/cron/refresh-google`
-- [ ] Confirm Google rating + reviews refresh on their profile
-
-## 6. Production hardening
-
-- [ ] Enable email confirmation in Supabase Auth → Providers → Email
-- [ ] Set up SMTP (SendGrid / Resend) under Auth → SMTP Settings
-- [ ] Add an SPF/DKIM record for your domain
-- [ ] Rate-limit `/api/bookings` (e.g. via Vercel Edge Middleware or Upstash)
-- [ ] Replace the lightweight `customer_id is null` policy with reCAPTCHA on the booking form
-- [ ] Add Sentry / Logtail for error tracking
-- [ ] Add `robots.txt` and `sitemap.xml` (Next.js can generate these)
-- [ ] Switch DB types to generated: `npm run supabase:types`
+IndexNow is protected by the same secret and should be invoked only after the approved indexable URL set is live.

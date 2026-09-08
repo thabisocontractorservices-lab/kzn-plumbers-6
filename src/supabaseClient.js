@@ -7,12 +7,17 @@
 
 import { createBrowserClient } from "@supabase/ssr";
 
-// 👇 PASTE YOUR SUPABASE URL HERE (project base URL only — no /rest/v1/ suffix)
-export const SUPABASE_URL = "https://fpgtulituouuzpxqlofh.supabase.co";
+export const SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://missing-config.supabase.co";
 
-// 👇 PASTE YOUR SUPABASE PUBLIC (anon / publishable) KEY HERE
-export const SUPABASE_PUBLIC_KEY = "sb_publishable_zfuBFuumrTc7KjoTbUIWjw_rhvqVez1";
+export const SUPABASE_PUBLIC_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "missing-public-key";
 
-// One Supabase client, used everywhere in the app.
-// Same .auth / .from / .storage API as before — sessions now live in cookies.
+export const isSupabaseConfigured = Boolean(
+  process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+);
+
+// One browser client shared by auth and authenticated dashboard features.
+// Production deployments must provide both NEXT_PUBLIC_SUPABASE_* variables.
 export const supabase = createBrowserClient(SUPABASE_URL, SUPABASE_PUBLIC_KEY);

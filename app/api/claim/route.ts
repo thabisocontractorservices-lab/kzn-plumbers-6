@@ -1,183 +1,57 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { revalidatePath } from "next/cache";
+import "server-only";
+import { NextRequest } from "next/server";
+import { z } from "zod";
 import { notifyNewClaim } from "@/lib/email";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { AccessError, privateJson, requireSameOrigin, requireUser } from "@/lib/server-access";
+import { authFlowPublishedBusiness, ensureAuthFlowProfile } from "@/lib/auth-flow-records";
+import { authFlowFailure as accessFailure, missingAuthFlowColumn, readAuthFlowJson } from "@/lib/auth-flow-input";
+import { formatWhatsApp } from "@/lib/utils";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+const Schema = z.object({
+  plumber_id: z.string().uuid(),
+  phone: z.string().trim().max(30).regex(/^[+\d\s()-]+$/)
+    .refine((value) => /^27[1-8]\d{8}$/.test(formatWhatsApp(value)), "Enter a South African business number."),
+});
 
-/**
- * POST /api/claim
- * Body: { plumber_id: string, phone: string }
- * Auth: Bearer token (Supabase access token)
- *
- * If the normalised phone matches the plumber's whatsapp_number:
- *   → auto-approve (set profile_id, mark claim auto_approved)
- * Otherwise:
- *   → create pending claim for admin review
- */
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    // 1. Authenticate the user
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    requireSameOrigin(request);
+    const user = await requireUser(request);
+    const parsed = Schema.safeParse(await readAuthFlowJson(request, 4096));
+    if (!parsed.success) return privateJson({ error: "Check the claim details." }, 400);
+    const plumber = await authFlowPublishedBusiness(parsed.data.plumber_id);
+    if (plumber.profile_id) return privateJson({ error: "This listing is already linked to an account." }, 409);
+    const admin = getSupabaseAdmin();
+    const owned = await admin.from("plumbers").select("id").eq("profile_id", user.id).limit(1);
+    if (owned.error) throw new AccessError("Cannot check your existing business profile right now.", 503);
+    if (owned.data?.length) return privateJson({ error: "This account already has a business profile. Contact support about a different listing." }, 409);
+    const existing = await admin.from("claims").select("id, status")
+      .eq("plumber_id", plumber.id).eq("claimant_id", user.id).eq("status", "pending").limit(1);
+    if (existing.error) throw new AccessError("Ownership requests are temporarily unavailable.", 503);
+    if (existing.data?.length) return privateJson({ error: "You already have a pending ownership request.", status: "pending" }, 409);
+    await ensureAuthFlowProfile(user);
+
+    // Comparing a public phone number is context for the reviewer, never proof of ownership.
+    const phoneMatchObserved = formatWhatsApp(parsed.data.phone) === formatWhatsApp(plumber.whatsapp_number);
+    const reason = phoneMatchObserved ? "Public phone matched; independent ownership evidence still required." : "Public phone differs; independent ownership evidence required.";
+    const payload: Record<string, unknown> = {
+      plumber_id: plumber.id, claimant_id: user.id, phone_entered: formatWhatsApp(parsed.data.phone),
+      status: "pending", admin_notes: `[request context] ${reason}`,
+      phone_match_observed: phoneMatchObserved, review_reason: reason,
+    };
+    const optional = ["phone_match_observed", "review_reason"];
+    let inserted = await admin.from("claims").insert(payload);
+    for (let attempt = 0; inserted.error && attempt < optional.length; attempt++) {
+      const missing = missingAuthFlowColumn(inserted.error, "claims", optional);
+      if (!missing || !(missing in payload)) break;
+      delete payload[missing];
+      inserted = await admin.from("claims").insert(payload);
     }
-    const token = authHeader.replace("Bearer ", "");
-    const {
-      data: { user },
-      error: authError,
-    } = await supabaseAdmin.auth.getUser(token);
+    if (inserted.error) throw new AccessError("Ownership request could not be confirmed as saved. Check before submitting again.", 503);
 
-    if (authError || !user) {
-      return NextResponse.json({ error: "Invalid session" }, { status: 401 });
-    }
-
-    // 2. Parse body
-    const body = await req.json();
-    const { plumber_id, phone } = body;
-
-    if (!plumber_id || !phone) {
-      return NextResponse.json(
-        { error: "plumber_id and phone are required" },
-        { status: 400 },
-      );
-    }
-
-    // 3. Fetch the plumber
-    const { data: plumber, error: plumberError } = await supabaseAdmin
-      .from("plumbers")
-      .select("id, profile_id, whatsapp_number, trading_name, slug")
-      .eq("id", plumber_id)
-      .single();
-
-    if (plumberError || !plumber) {
-      return NextResponse.json(
-        { error: "Plumber not found" },
-        { status: 404 },
-      );
-    }
-
-    // 4. Check not already claimed
-    if (plumber.profile_id) {
-      return NextResponse.json(
-        { error: "This listing has already been claimed" },
-        { status: 409 },
-      );
-    }
-
-    // 5. Check for existing pending claim from this user
-    const { data: existingClaim } = await supabaseAdmin
-      .from("claims")
-      .select("id, status")
-      .eq("plumber_id", plumber_id)
-      .eq("claimant_id", user.id)
-      .in("status", ["pending", "auto_approved"])
-      .maybeSingle();
-
-    if (existingClaim) {
-      return NextResponse.json(
-        { error: "You already have a claim for this listing", status: existingClaim.status },
-        { status: 409 },
-      );
-    }
-
-    // 6. Normalise & compare phone numbers
-    const normInput = normalisePhone(phone);
-    const normListing = normalisePhone(plumber.whatsapp_number);
-    const phoneMatch = normInput === normListing && normInput.length >= 9;
-
-    // 7. Insert claim record
-    const { error: claimInsertError } = await supabaseAdmin
-      .from("claims")
-      .insert({
-        plumber_id,
-        claimant_id: user.id,
-        phone_entered: phone,
-        status: phoneMatch ? "auto_approved" : "pending",
-        resolved_at: phoneMatch ? new Date().toISOString() : null,
-      });
-
-    if (claimInsertError) {
-      console.error("Claim insert error:", claimInsertError);
-      return NextResponse.json(
-        { error: "Failed to submit claim" },
-        { status: 500 },
-      );
-    }
-
-    // 8. If phone matches → auto-link the plumber to the user profile
-    if (phoneMatch) {
-      // Update plumber profile_id
-      const { error: linkError } = await supabaseAdmin
-        .from("plumbers")
-        .update({ profile_id: user.id })
-        .eq("id", plumber_id);
-
-      if (linkError) {
-        console.error("Link error:", linkError);
-        return NextResponse.json(
-          { error: "Phone matched but failed to link listing" },
-          { status: 500 },
-        );
-      }
-
-      // Update user profile role to 'plumber' if not already
-      await supabaseAdmin
-        .from("profiles")
-        .update({ role: "plumber", whatsapp_number: phone })
-        .eq("id", user.id);
-
-      // Notify admin (fire-and-forget)
-      notifyNewClaim({
-        tradingName: plumber.trading_name,
-        claimantEmail: user.email || "unknown",
-        phoneEntered: phone,
-        phoneMatch: true,
-        status: "auto_approved",
-      }).catch(() => {});
-
-      // Revalidate the plumber profile page so claim CTA disappears immediately
-      try {
-        revalidatePath(`/plumber/${plumber.slug ?? plumber_id}`);
-      } catch { /* non-fatal */ }
-
-      return NextResponse.json({
-        status: "auto_approved",
-        message: `${plumber.trading_name} is now linked to your account.`,
-      });
-    }
-
-    // 9. Pending → admin will review — notify admin
-    notifyNewClaim({
-      tradingName: plumber.trading_name,
-      claimantEmail: user.email || "unknown",
-      phoneEntered: phone,
-      phoneMatch: false,
-      status: "pending",
-    }).catch(() => {});
-
-    return NextResponse.json({
-      status: "pending",
-      message:
-        "Your claim has been submitted for manual review. We'll email you once approved.",
-    });
-  } catch (err) {
-    console.error("Claim error:", err);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
-  }
-}
-
-/** Strip non-digits, normalise to 27XXXXXXXXX format */
-function normalisePhone(phone: string): string {
-  if (!phone) return "";
-  let digits = phone.replace(/\D/g, "");
-  if (digits.startsWith("0")) digits = "27" + digits.slice(1);
-  if (!digits.startsWith("27") && digits.length === 9) digits = "27" + digits;
-  return digits;
+    // The request is saved independently of optional notification delivery.
+    void notifyNewClaim({ tradingName: plumber.trading_name, claimantEmail: user.email!, phoneEntered: parsed.data.phone, phoneMatch: phoneMatchObserved, status: "pending" }).catch(() => {});
+    return privateJson({ status: "pending", message: "Request saved for manual review. No ownership access has been transferred." }, 201);
+  } catch (error) { return accessFailure(error); }
 }

@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/src/supabaseClient";
+import { trackEvent } from "@/lib/analytics";
 
-type Step = "auth" | "verify" | "success" | "pending";
+type Step = "auth" | "confirm" | "verify" | "pending";
 
 interface Props {
   plumberId: string;
@@ -23,6 +24,9 @@ export function ClaimFlow({
   const [step, setStep] = useState<Step>("auth");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const returnPath = `/claim/${encodeURIComponent(plumberSlug)}`;
+  const loginHref = `/login?next=${encodeURIComponent(returnPath)}`;
 
   // Auth fields
   const [mode, setMode] = useState<"login" | "register">("register");
@@ -37,71 +41,47 @@ export function ClaimFlow({
   /* ─── Step 1: Register or Log In ─── */
   async function handleAuth(e: React.FormEvent) {
     e.preventDefault();
+    if (loading) return;
     setError("");
     setLoading(true);
 
     try {
       if (mode === "register") {
-        // Use server-side instant signup — no email confirmation needed
-        // This creates the user via admin API (auto-confirmed) so we can
-        // sign in immediately and proceed with the claim
-        const res = await fetch("/api/register/homeowner", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: fullName,
-            email,
-            area: "",
-            password,
-          }),
+        if (fullName.trim().length < 2 || fullName.trim().length > 120 || password.length < 8 || password.length > 128) throw new Error("Enter your full name (2–120 characters) and a password of 8–128 characters.");
+        const { data, error: signupError } = await supabase.auth.signUp({
+          email: email.trim().toLowerCase(),
+          password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(returnPath)}`,
+            data: { full_name: fullName.trim() },
+          },
         });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          if (data.alreadyExists) {
-            // Account exists — try signing in instead
-            const { error: signInError } = await supabase.auth.signInWithPassword({
-              email,
-              password,
-            });
-            if (signInError) {
-              setError("An account with this email already exists. Please switch to 'I have an account' and log in.");
-              setLoading(false);
-              return;
-            }
-          } else {
-            throw new Error(data.error ?? "Could not create account");
-          }
-        } else {
-          // Account created — sign in immediately
-          const { error: signInError } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-          });
-          if (signInError) {
-            throw new Error("Account created but could not sign in. Please use the login page.");
-          }
+        if (signupError) throw signupError;
+        setPassword("");
+        if (!data.session || !data.user?.email_confirmed_at) {
+          setStep("confirm");
+          return;
         }
       } else {
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
         if (signInError) throw signInError;
+        setPassword("");
+        if (!data.user?.email_confirmed_at) {
+          setStep("confirm");
+          return;
+        }
       }
+      setVerifyPhone(phone);
       setStep("verify");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Authentication failed";
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
+      setError(err instanceof Error ? err.message : "Authentication failed. Please try signing in.");
+    } finally { setLoading(false); }
   }
 
-  /* ─── Step 2: Verify phone → submit claim ─── */
+  /* Business phone is review context only; it never authorises a transfer. */
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault();
+    if (loading) return;
     setError("");
     setLoading(true);
 
@@ -129,15 +109,17 @@ export function ClaimFlow({
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
-      if (!res.ok) throw new Error(data.error ?? "Claim failed");
+      if (res.status === 409 && data.status === "pending") { setStep("pending"); return; }
+      if (!res.ok || data.status !== "pending") throw new Error(data.error ?? "Claim could not be confirmed as saved.");
 
-      if (data.status === "auto_approved") {
-        setStep("success");
-      } else {
-        setStep("pending");
-      }
+      trackEvent("claim_complete", {
+        plumber_id: plumberId,
+        area,
+        verification_state: "ownership_review_pending",
+      });
+      setStep("pending");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Claim failed";
       setError(msg);
@@ -146,36 +128,32 @@ export function ClaimFlow({
     }
   }
 
-  /* ─── Already logged in? Check & skip to verify ─── */
-  async function checkExistingSession() {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (session) {
-      setStep("verify");
-    }
-  }
-
-  // Check session on mount
   useEffect(() => {
-    checkExistingSession();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    let active = true;
+    void supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!active) return;
+      if (user?.email_confirmed_at) setStep("verify");
+      else if (user) { setEmail(user.email || ""); setStep("confirm"); }
+    }).catch(() => {}).finally(() => { if (active) setChecking(false); });
+    return () => { active = false; };
   }, []);
+
+  if (checking) return <div className="panel" role="status">Checking your session…</div>;
 
   return (
     <div className="panel">
       {/* Progress indicator */}
       <div className="flex items-center gap-2 mb-6">
-        <StepDot active={step === "auth"} done={step !== "auth"} label="1" />
+        <StepDot active={step === "auth" || step === "confirm"} done={step === "verify" || step === "pending"} label="1" />
         <div className="flex-1 h-0.5 bg-gray-200" />
         <StepDot
           active={step === "verify"}
-          done={step === "success" || step === "pending"}
+          done={step === "pending"}
           label="2"
         />
         <div className="flex-1 h-0.5 bg-gray-200" />
         <StepDot
-          active={step === "success" || step === "pending"}
+          active={step === "pending"}
           done={false}
           label="✓"
         />
@@ -246,7 +224,7 @@ export function ClaimFlow({
               label="Password"
               value={password}
               onChange={setPassword}
-              placeholder={mode === "register" ? "Min. 6 characters" : ""}
+              placeholder={mode === "register" ? "Min. 8 characters" : ""}
               type="password"
               required
             />
@@ -279,10 +257,9 @@ export function ClaimFlow({
             Verify ownership
           </h2>
           <p className="text-sm text-gray-600 mb-6">
-            Enter the phone number listed for{" "}
-            <strong>{tradingName}</strong> to verify you own this
-            business. The number on file ends in{" "}
-            <strong>{maskedPhone}</strong>.
+            Enter the business phone number for <strong>{tradingName}</strong>.
+            The public number on file ends in <strong>{maskedPhone}</strong>.
+            A phone match helps the review but does not transfer ownership automatically.
           </p>
 
           <form onSubmit={handleVerify} className="space-y-4">
@@ -296,8 +273,7 @@ export function ClaimFlow({
             />
 
             <p className="text-xs text-gray-500">
-              💡 If the number doesn&apos;t match, your claim will be sent to our
-              team for manual review.
+              Every ownership request is reviewed. We may ask for company, domain, email or registration evidence.
             </p>
 
             {error && (
@@ -311,35 +287,21 @@ export function ClaimFlow({
               disabled={loading}
               className="btn-primary w-full"
             >
-              {loading ? "Verifying…" : "Verify & claim listing"}
+              {loading ? "Submitting…" : "Submit ownership request"}
             </button>
           </form>
         </>
       )}
 
-      {/* ─── Success: Auto-approved ─── */}
-      {step === "success" && (
-        <div className="text-center py-6">
-          <div className="text-5xl mb-3">🎉</div>
-          <h2 className="font-display text-2xl font-bold mb-2">
-            Listing claimed!
-          </h2>
-          <p className="text-gray-600 mb-6">
-            <strong>{tradingName}</strong> is now linked to your account.
-            Head to your dashboard to update your profile, upload photos, and
-            manage bookings.
+      {step === "confirm" && (
+        <div role="status" className="rounded-lg border border-blue-200 bg-blue-50 p-5">
+          <h2 className="font-display text-xl font-bold">Confirm your email first</h2>
+          <p className="mt-2 text-sm leading-relaxed">
+            If signup can proceed, a confirmation link will be sent to <strong>{email}</strong>.
+            Open it to return to this ownership request. If you already have an account, sign in instead.
+            No claim has been submitted and no listing access has been transferred.
           </p>
-          <div className="flex gap-3 justify-center">
-            <a href="/dashboard" className="btn-primary">
-              Go to dashboard →
-            </a>
-            <a
-              href={`/plumber/${plumberSlug}`}
-              className="btn-secondary"
-            >
-              View listing
-            </a>
-          </div>
+          <a href={loginHref} className="btn-primary mt-4">Sign in and return to this claim</a>
         </div>
       )}
 
@@ -351,9 +313,9 @@ export function ClaimFlow({
             Claim submitted for review
           </h2>
           <p className="text-gray-600 mb-6">
-            The phone number didn&apos;t match our records, so our team will
-            review your claim for <strong>{tradingName}</strong>. This usually
-            takes 1–2 business days. We&apos;ll email you once it&apos;s approved.
+            We&apos;ll review the ownership request for <strong>{tradingName}</strong>
+            before transferring profile access. We may ask for supporting evidence.
+            No access is granted until the ownership review is approved.
           </p>
           <a href="/" className="btn-primary">
             Back to directory
@@ -392,6 +354,7 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         required={required}
+        maxLength={type === "password" ? 128 : type === "email" ? 200 : type === "tel" ? 30 : 120}
         className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand/30 focus:border-brand outline-none transition-all"
       />
     </div>

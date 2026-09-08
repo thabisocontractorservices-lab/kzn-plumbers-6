@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/src/supabaseClient";
 import { useAuthGate } from "@/lib/useAuthGate";
 import { DashboardLoading } from "@/components/DashboardLoading";
@@ -44,7 +43,6 @@ export default function ViewInvoicePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const router = useRouter();
   const { user, authChecking } = useAuthGate();
   const [invoice, setInvoice] = useState<InvoiceData | null>(null);
   const [plumber, setPlumber] = useState<PlumberInfo | null>(null);

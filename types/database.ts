@@ -12,6 +12,7 @@ export type Database = {
           full_name: string;
           email: string;
           phone: string | null;
+          phone_number: string | null;
           whatsapp_number: string | null;
           role: "plumber" | "homeowner" | "admin";
           created_at: string;
@@ -27,7 +28,7 @@ export type Database = {
       plumbers: {
         Row: {
           id: string;
-          profile_id: string;
+          profile_id: string | null;
           trading_name: string;
           slug: string | null;
           area: string;
@@ -45,6 +46,25 @@ export type Database = {
           google_review_count: number | null;
           google_reviews_synced_at: string | null;
           whatsapp_number: string;
+          website_url: string | null;
+          facebook_url: string | null;
+          instagram_url: string | null;
+          tiktok_url: string | null;
+          sessa_number: string | null;
+          lpgsa_number: string | null;
+          verification_state: "credential_verified" | "business_claimed" | "directory_record";
+          verification_rank: 1 | 2 | 3;
+          verification_source_url: string | null;
+          credential_verified_at: string | null;
+          verification_expires_at: string | null;
+          last_checked_at: string | null;
+          service_areas: string[];
+          response_time_minutes: number | null;
+          accepts_new_work: boolean;
+          record_status: "pending" | "published" | "rejected" | "suspended" | "merged";
+          source_url: string | null;
+          source_retrieved_at: string | null;
+          source_notes: string | null;
           profile_views: number;
           created_at: string;
           updated_at: string;
@@ -129,6 +149,14 @@ export type Database = {
           preferred_datetime: string;
           status: "pending" | "confirmed" | "cancelled";
           notes: string | null;
+          service_requested: string | null;
+          suburb: string | null;
+          urgency: "planned" | "today" | "emergency";
+          source_path: string | null;
+          accepted_at: string | null;
+          completed_at: string | null;
+          job_outcome: "accepted" | "declined" | "won" | "lost" | "cancelled" | null;
+          job_value: number | null;
           created_at: string;
           updated_at: string;
         };

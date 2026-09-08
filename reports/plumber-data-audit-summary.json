@@ -1,0 +1,18 @@
+{
+  "generatedAt": "2026-08-16T22:09:46.162Z",
+  "readOnly": true,
+  "total": 1253,
+  "published": 1253,
+  "claimed": 67,
+  "suggestedIndexable": 854,
+  "manualReview": 981,
+  "reviewReasonCounts": {
+    "thin_description": 295,
+    "missing_services": 784,
+    "missing_phone": 13,
+    "generated_template_description": 478,
+    "entity_type_review": 73
+  },
+  "duplicateCandidateGroups": 37,
+  "note": "Candidates are not automatic deletions. Multi-branch businesses and shared numbers require human entity resolution."
+}

@@ -4,19 +4,47 @@
 
 :root {
   --font-dm-sans: "DM Sans", system-ui, sans-serif;
-  --font-playfair: "Playfair Display", Georgia, serif;
+  --font-display: "DM Sans", system-ui, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 html, body {
-  background: #F4F6FB;
+  background: #F8FAFC;
   color: #1F2937;
   font-family: var(--font-dm-sans);
   -webkit-font-smoothing: antialiased;
 }
 
 h1, h2, h3, h4 {
-  font-family: var(--font-playfair);
-  letter-spacing: -0.01em;
+  font-family: var(--font-display);
+  letter-spacing: -0.025em;
+}
+
+:focus-visible {
+  outline: 3px solid #38BDF8;
+  outline-offset: 3px;
+}
+
+.skip-link {
+  position: fixed;
+  left: 1rem;
+  top: 0.75rem;
+  z-index: 100;
+  transform: translateY(-180%);
+  border-radius: 0.5rem;
+  background: #FFFFFF;
+  color: #0F172A;
+  padding: 0.65rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.2);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
 }
 
 @layer components {
@@ -48,7 +76,7 @@ h1, h2, h3, h4 {
    Applies to anything inside <article class="seo-content">.
    ────────────────────────────────────────────────────────────────────────── */
 .seo-content h2 {
-  font-family: var(--font-playfair);
+  font-family: var(--font-display);
   font-size: 1.6rem;
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -163,4 +191,18 @@ h1, h2, h3, h4 {
 
 .animate-slideDown {
   animation: slideDown 0.15s ease-out;
+}
+
+@media print {
+  header, footer, .skip-link, nav, button, a.btn-primary, a.btn-secondary {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+  }
+  .print-checklist {
+    border: 0 !important;
+    box-shadow: none !important;
+    page-break-inside: avoid;
+  }
 }

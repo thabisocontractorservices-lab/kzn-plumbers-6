@@ -1,194 +1,171 @@
+"use client";
+
+import Image from "next/image";
 import Link from "next/link";
+import { BadgeCheck, Building2, Clock3, MapPin, MessageCircle, Phone, ShieldQuestion, Star } from "lucide-react";
+import { formatRand, initials } from "@/lib/utils";
+import { trackEvent } from "@/lib/analytics";
 import {
-  callLink,
-  combinedRating,
-  formatRand,
-  initials,
-  isLandline,
-  whatsAppLink,
-} from "@/lib/utils";
-import type { Plumber } from "@/types/database";
+  formattedVerificationDate,
+  verificationDescription,
+  verificationLabel,
+  verificationTone,
+} from "@/lib/verification";
+import type { PublicPlumber } from "@/lib/directory-public-types";
+import { directoryContact } from "@/lib/directory-contact";
 
-export function PlumberCard({ plumber }: { plumber: Plumber }) {
-  const r = combinedRating(
-    plumber.google_rating,
-    plumber.google_review_count,
-    plumber.ratings?.internal_rating,
-    plumber.ratings?.internal_count,
-  );
+export function PlumberCard({
+  plumber,
+  sourcePage = "directory",
+  rankPosition,
+}: {
+  plumber: PublicPlumber;
+  sourcePage?: string;
+  rankPosition?: number;
+}) {
+  const profileHref = `/plumber/${plumber.slug ?? plumber.id}`;
+  const primaryService = plumber.specialties?.[0] ?? "plumbing work";
+  const message = `Hi, I found ${plumber.trading_name} on kznplumbers.co.za and would like to get a quote for ${primaryService.toLowerCase()} in ${plumber.area}.`;
+  const { phoneHref: phoneLink, whatsappHref: waLink } = directoryContact(plumber.whatsapp_number, message);
+  const profilePhoto = plumber.photos?.find((photo) => photo.is_profile_photo)?.photo_url ?? null;
+  const state = plumber.verification_state;
+  const checkedDate = formattedVerificationDate(plumber.credential_verified_at);
+  const rating = plumber.google_rating && plumber.google_review_count
+    ? Number(plumber.google_rating)
+    : null;
+  const takingWork = plumber.taking_work;
 
-  const stars = r.rating
-    ? "★".repeat(Math.round(r.rating)) + "☆".repeat(5 - Math.round(r.rating))
-    : "—";
+  function trackContact(kind: "whatsapp_click" | "call_click") {
+    trackEvent(kind, {
+      plumber_id: plumber.id,
+      area: plumber.area,
+      service: primaryService,
+      source_page: sourcePage,
+      rank_position: rankPosition,
+      verification_state: state,
+    });
+  }
 
-  // Detect landline numbers (SA area codes 011/021/031 etc) — they don't
-  // support WhatsApp, so show a "Call" button instead.
-  const landline = isLandline(plumber.whatsapp_number);
-
-  // Pre-filled WhatsApp message — brand voice with service + area context.
-  //   "Hi, I found [Business] on kznplumbers.co.za and would like to get a
-  //    quote for [Service] in [Area]."
-  const primaryService = (plumber.specialties?.[0] ?? "plumbing work").toLowerCase();
-  const waLink = whatsAppLink(
-    plumber.whatsapp_number,
-    `Hi, I found ${plumber.trading_name} on kznplumbers.co.za and would like to get a quote for ${primaryService} in ${plumber.area}.`,
-  );
-  const phoneLink = callLink(plumber.whatsapp_number);
-
-  const availabilityClass = {
-    available: "bg-green-100 text-green-800",
-    busy: "bg-amber-light text-amber",
-    unavailable: "bg-red-100 text-red-800",
-  }[plumber.availability_status];
-
-  // Profile photo (if uploaded)
-  const profilePhoto = plumber.photos?.find((p) => p.is_profile_photo)?.photo_url ?? null;
-  const certCount = plumber.certifications?.length ?? 0;
-  const isClaimed = !!plumber.profile_id;
-  const internalReviews = plumber.reviews ?? [];
-  const internalAvgRating = internalReviews.length > 0
-    ? internalReviews.reduce((sum, rev) => sum + rev.rating, 0) / internalReviews.length
-    : 0;
+  const StateIcon = state === "credential_verified"
+    ? BadgeCheck
+    : state === "business_claimed"
+      ? Building2
+      : ShieldQuestion;
 
   return (
-    <article className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-card-hover hover:-translate-y-0.5 hover:border-blue-200 transition-all flex flex-col">
-      <Link
-        href={`/plumber/${plumber.slug ?? plumber.id}`}
-        className="flex gap-3 items-start mb-3"
-      >
-        {profilePhoto ? (
-          <div
-            className="w-14 h-14 rounded-xl bg-cover bg-center shrink-0"
-            style={{ backgroundImage: `url(${profilePhoto})` }}
-          />
-        ) : (
-          <div
-            className="w-14 h-14 rounded-xl flex items-center justify-center font-bold text-white text-lg shrink-0"
-            style={{ background: "linear-gradient(135deg,#1A5FBE,#3A7FDE)" }}
-          >
-            {initials(plumber.trading_name)}
-          </div>
-        )}
-        <div className="flex-1 min-w-0">
-          <h3 className="font-display font-bold text-lg text-gray-900 leading-tight">
-            {plumber.trading_name}
-          </h3>
-          <div className="text-sm text-gray-500 flex items-center gap-1">
-            📍 {plumber.area}
-            {plumber.pirb_number ? ` · ${plumber.pirb_number}` : ""}
-          </div>
+    <article className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-lg">
+      <div className="flex items-start gap-3">
+        <Link href={profileHref} className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-brand text-white">
+          {profilePhoto ? (
+            <Image
+              src={profilePhoto}
+              alt={`${plumber.trading_name} profile`}
+              fill
+              sizes="56px"
+              className="object-cover"
+            />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center text-lg font-bold">
+              {initials(plumber.trading_name)}
+            </span>
+          )}
+        </Link>
+        <div className="min-w-0 flex-1">
+          <Link href={profileHref} className="group block">
+            <h3 className="font-display text-lg font-bold leading-tight text-slate-950 group-hover:text-brand">
+              {plumber.trading_name}
+            </h3>
+          </Link>
+          <p className="mt-1 flex items-center gap-1 text-sm text-slate-600">
+            <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {plumber.area}
+          </p>
         </div>
-      </Link>
-
-      <div className="flex flex-wrap gap-1.5 mb-3">
-        {isClaimed && (
-          <span className="badge bg-blue-100 text-blue-700">✓ Claimed</span>
-        )}
-        {plumber.is_certified && plumber.is_verified && (
-          <span className="badge bg-teal-light text-teal">✓ PIRB Certified</span>
-        )}
-        <span className={`badge ${availabilityClass}`}>
-          ● {plumber.availability_status}
-        </span>
-        {plumber.is_emergency && (
-          <span className="badge bg-emergency-light text-emergency">🚨 24/7</span>
-        )}
-        {certCount > 0 && (
-          <span className="badge bg-purple-100 text-purple-700">📜 {certCount} cert{certCount > 1 ? "s" : ""}</span>
-        )}
       </div>
 
-      <div className="flex flex-wrap gap-1.5 mb-3">
-        {plumber.specialties.slice(0, 4).map((s) => (
-          <span
-            key={s}
-            className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-medium"
-          >
-            {s}
+      <div className="mt-4 space-y-2">
+        <div className={`rounded-lg border px-3 py-2 ${verificationTone(state)}`}>
+          <div className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wide">
+            <StateIcon className="h-3.5 w-3.5" aria-hidden="true" />
+            {verificationLabel(state)}
+          </div>
+          <p className="mt-1 text-xs leading-relaxed opacity-90">{verificationDescription(state)}</p>
+          {checkedDate && state === "credential_verified" && (
+            <p className="mt-1 text-[11px] font-semibold">Checked {checkedDate}</p>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-1.5">
+          <span className={`badge ${takingWork ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
+            <Clock3 className="h-3 w-3" aria-hidden="true" />
+            {takingWork ? "Recently opted in · confirm" : "Confirm availability"}
+          </span>
+          {plumber.is_emergency && (
+            <span className="badge bg-orange-50 text-orange-800">Emergency service listed</span>
+          )}
+          {plumber.pirb_number && state === "credential_verified" && (
+            <span className="badge bg-teal-light text-teal">PIRB {plumber.pirb_number}</span>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-1.5">
+        {(plumber.specialties ?? []).slice(0, 4).map((specialty) => (
+          <span key={specialty} className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+            {specialty}
           </span>
         ))}
       </div>
 
-      <div className="py-2 border-y border-gray-100 mb-3 space-y-1.5">
-        {/* Google rating */}
-        <div className="flex items-center gap-2">
-          <span className="text-amber text-sm tracking-wide">{stars}</span>
-          {r.rating && (
-            <>
-              <strong className="text-sm text-gray-900">{r.rating}</strong>
-              <span className="text-xs text-gray-500">({r.count})</span>
-            </>
+      <div className="mt-4 flex items-center justify-between border-y border-slate-100 py-3">
+        <div>
+          {rating ? (
+            <div className="flex items-center gap-1.5 text-sm">
+              <Star className="h-4 w-4 fill-amber-400 text-amber-400" aria-hidden="true" />
+              <strong className="text-slate-950">{rating.toFixed(1)}</strong>
+              <span className="text-slate-500">Google · {plumber.google_review_count}</span>
+            </div>
+          ) : (
+            <span className="text-xs text-slate-500">No Google rating displayed</span>
           )}
-          <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-semibold">
-            Google
-          </span>
         </div>
-        {/* Internal reviews */}
-        {internalReviews.length > 0 && (
-          <div className="flex items-center gap-2">
-            <span className="text-amber text-sm tracking-wide">
-              {"★".repeat(Math.round(internalAvgRating))}
-              {"☆".repeat(5 - Math.round(internalAvgRating))}
-            </span>
-            <strong className="text-sm text-gray-900">{internalAvgRating.toFixed(1)}</strong>
-            <span className="text-xs text-gray-500">({internalReviews.length})</span>
-            <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-brand-light text-brand font-semibold">
-              KZN Plumbers
-            </span>
-          </div>
-        )}
-      </div>
-
-      <div className="mt-auto flex flex-col gap-2.5">
-        <div className="flex items-baseline gap-1">
+        <div className="text-right">
           {plumber.hourly_rate ? (
             <>
-              <span className="font-display text-xl font-bold text-gray-900">
-                {formatRand(plumber.hourly_rate)}
-              </span>
-              <span className="text-xs text-gray-500">/hour · callout extra</span>
+              <div className="font-display text-lg font-bold text-slate-950">{formatRand(plumber.hourly_rate)}</div>
+              <div className="text-[10px] text-slate-500">per hour · confirm call-out</div>
             </>
           ) : (
-            <span className="font-display text-base font-semibold text-gray-700">
-              Contact for quote
-            </span>
+            <span className="text-sm font-semibold text-slate-700">Request a written quote</span>
           )}
         </div>
-        <div className="grid grid-cols-3 gap-1.5">
-          {landline ? (
-            <a
-              href={phoneLink}
-              className="btn-primary text-xs py-2 px-1"
-              onClick={(e) => e.stopPropagation()}
-              aria-label={`Call ${plumber.trading_name}`}
-            >
-              📞 Call
-            </a>
-          ) : (
-            <a
-              href={waLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-whatsapp text-xs py-2 px-1"
-              onClick={(e) => e.stopPropagation()}
-              aria-label={`WhatsApp ${plumber.trading_name}`}
-            >
-              💬 WhatsApp
-            </a>
-          )}
-          <Link
-            href={`/plumber/${plumber.slug ?? plumber.id}#book`}
-            className="btn-secondary text-xs py-2 px-1"
-          >
-            Book
-          </Link>
-          <Link
-            href={`/plumber/${plumber.slug ?? plumber.id}`}
-            className="btn-secondary text-xs py-2 px-1"
-          >
-            View
-          </Link>
-        </div>
+      </div>
+
+      <div className="mt-auto grid grid-cols-[1fr_auto] gap-2 pt-4">
+        {waLink ? (
+          <a href={waLink} target="_blank" rel="noopener noreferrer"
+            onClick={() => trackContact("whatsapp_click")} className="btn-whatsapp">
+            <MessageCircle className="h-4 w-4" aria-hidden="true" /> WhatsApp
+          </a>
+        ) : phoneLink ? (
+          <a href={phoneLink} onClick={() => trackContact("call_click")} className="btn-primary">
+            <Phone className="h-4 w-4" aria-hidden="true" /> Call
+          </a>
+        ) : (
+          <span className="self-center text-xs text-slate-500">Phone not recorded</span>
+        )}
+        <Link
+          href={profileHref}
+          onClick={() => trackEvent("profile_view", {
+            plumber_id: plumber.id,
+            area: plumber.area,
+            source_page: sourcePage,
+            rank_position: rankPosition,
+          })}
+          className="btn-secondary"
+        >
+          Details
+        </Link>
       </div>
     </article>
   );

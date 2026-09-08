@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/utils/supabase/server";
+import { safeAuthReturnPath } from "@/lib/auth-flow-return";
 
 /**
  * OAuth callback handler.
@@ -13,15 +14,25 @@ import { createSupabaseServerClient } from "@/utils/supabase/server";
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/";
-
-  if (code) {
-    const supabase = await createSupabaseServerClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
-      return NextResponse.redirect(`${origin}${next}`);
+  const next = safeAuthReturnPath(searchParams.get("next"));
+  let destination = new URL("/login", origin);
+  destination.searchParams.set("error", "auth");
+  destination.searchParams.set("next", next);
+  try {
+    if (code && code.length <= 4096) {
+      const supabase = await createSupabaseServerClient();
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      if (!error) {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (!userError && user?.email_confirmed_at) destination = new URL(next, origin);
+        else destination.searchParams.set("error", "confirmation");
+      }
     }
+  } catch {
+    // Do not log callback URLs, codes, tokens or user data.
   }
-
-  return NextResponse.redirect(`${origin}/login?error=oauth`);
+  const response = NextResponse.redirect(destination, { status: 303 });
+  response.headers.set("Cache-Control", "private, no-store");
+  response.headers.set("Referrer-Policy", "no-referrer");
+  return response;
 }

@@ -16,8 +16,8 @@ export default function robots(): MetadataRoute.Robots {
           "/admin",
           "/auth",
           "/api",
-          "/review/", // short link redirects, no SEO value
-          "/claim/",  // action pages, not content — no SEO value
+          // Claim pages are crawlable so their page-level noindex can be read.
+          // Review short links are redirects and do not need a robots block.
           "/login",
           "/register",
           "/forgot-password",

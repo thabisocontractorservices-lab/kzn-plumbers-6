@@ -1,0 +1,38 @@
+match_type,match_value,record_count,plumber_ids,trading_names,areas,action
+trading_name,25sevenassist,2,ad26d455-6521-4666-a9ce-dbcead9da6a8|058fbd44-0ad1-4337-a258-1050716bc6de,25Seven Assist | 25 Seven Assist,Durban North | Durban South,manual_entity_review
+trading_name,canproplumbingandmaintenance,2,340fafed-4982-462b-b944-e3b16ba60317|ff8dad45-60f4-4266-9eb9-0f20d639ad38,Canpro Plumbing and Maintenance | Canpro plumbing and maintenance ,Durban North,manual_entity_review
+trading_name,fennertrading,2,b67fc67b-ab23-4fb6-b8ae-17b3b4c171ed|982a1229-caac-440c-bc3e-8d647e9dac13,Fenner Trading | Fenner Trading ,South Coast | Other KZN,manual_entity_review
+trading_name,kznplumbfix,2,d00d1f11-1ee8-4f43-9b0b-1cde8820533e|53fa1e34-8481-41c9-847a-c363d822a4d8,KZN Plumb Fix | KZN Plumb Fix,Durban North | Pinetown,manual_entity_review
+trading_name,hmsplumbing,2,c18b3de6-93eb-4d4b-83c2-fbaf5647c764|2f37e68b-932f-4fd6-8f37-ea285f4b8e63,HMS PLUMBING  | HMS Plumbing,Other KZN,manual_entity_review
+trading_name,hazymansplumbers,2,d73ee408-5d84-461f-8916-2b547dd21e6e|26976631-0d03-4c96-af85-76ec4c2f1acd,HazyMan's Plumbers  | HazyMans Plumbers,Durban North,manual_entity_review
+trading_name,mzikaphoswaplumbers,2,a7c53dca-f035-4581-a7ae-e69a3e355ae9|c470a302-d5c3-4df8-a969-0fe5d32d4bcd,Mzikaphoswa Plumbers | MZIKAPHOSWA PLUMBERS ,Durban North | Other KZN,manual_entity_review
+trading_name,plumbguaranteekzn,2,cd7f48ca-3338-4753-b7cc-2021a9dd54c9|0954f6cb-b36b-49c2-b7f7-c51bd7dc2bde,Plumb Guarantee Kzn | PlumbGuarantee KZN,Durban North | Pinetown,manual_entity_review
+trading_name,rbplumbingmaintenance,2,ca552ef9-f6f0-4830-9b93-276518149de3|2728b6e7-f41a-445c-96d7-59d1cb651f52,R & B Plumbing & Maintenance | R & B Plumbing / Maintenance,Richards Bay,manual_entity_review
+trading_name,siphoplumbingsolutions,2,22c63d86-9288-431a-ad61-b8be86ec6338|a864f66b-1e5b-4d9a-b7e9-246d496b9b0d,Sipho plumbing solutions  | Sipho Plumbing Solutions,Durban South,manual_entity_review
+whatsapp_number,817527255,2,ad26d455-6521-4666-a9ce-dbcead9da6a8|17ab5cad-38bc-465e-9c3f-adc2a916a68c,25Seven Assist | 25 Seven Assist Pty Ltd,Durban North,manual_entity_review
+whatsapp_number,818536671,2,a4fccada-157a-49af-ba59-c7e7e5c66322|c8e0f739-ef60-483f-9bd5-d732e2b61639,NOKUSONGA CONSTRUCTION PTY LTD  | Nokusonga Construction,Durban North,manual_entity_review
+whatsapp_number,660512591,2,340fafed-4982-462b-b944-e3b16ba60317|ff8dad45-60f4-4266-9eb9-0f20d639ad38,Canpro Plumbing and Maintenance | Canpro plumbing and maintenance ,Durban North,manual_entity_review
+whatsapp_number,677396649,2,a2c4bcf0-1e5c-4741-83f8-440baa88f706|3d1ce690-8ce4-4a90-bfe3-a2aa5aeb107f,Dlangamandla Civils and Maintenance | Dlangamandla Civils & Maintenance ,Durban North,manual_entity_review
+whatsapp_number,836096012,2,b67fc67b-ab23-4fb6-b8ae-17b3b4c171ed|982a1229-caac-440c-bc3e-8d647e9dac13,Fenner Trading | Fenner Trading ,South Coast | Other KZN,manual_entity_review
+whatsapp_number,824655519,2,31fbbcdb-0920-4deb-8cba-0c8f88ca33f1|74b63ee9-3297-4129-b14e-2c1fe58818f2,Handy Fellas | Handifellas,PMB | Other KZN,manual_entity_review
+whatsapp_number,814217975,2,ebbf2e58-0618-4b2d-8ff8-6a401d01ef08|77f6847f-d8ba-4972-8759-06de0cfed025,"K E Plumbing building and maintenance | K.E Plumbing , Building & Maintenance ",South Coast | Other KZN,manual_entity_review
+whatsapp_number,619467258,2,d00d1f11-1ee8-4f43-9b0b-1cde8820533e|53fa1e34-8481-41c9-847a-c363d822a4d8,KZN Plumb Fix | KZN Plumb Fix,Durban North | Pinetown,manual_entity_review
+whatsapp_number,738174572,2,cf46d150-ba99-441f-8a2b-0f44e6430390|ec1db40c-1029-4c95-a7ef-e507ba004862,Bhekinkosi Plumber  | Stone cc plumber,PMB,manual_entity_review
+whatsapp_number,726012397,2,fb6ae641-7de8-460e-ac1a-0675f40238b2|10f3c341-031f-4f89-a6d6-ea6ec49df750,Live H20 Projects | Live H2o PROJECTS (Pty) Ltd,Durban North,manual_entity_review
+whatsapp_number,788695332,2,6cabd53d-6453-4bcc-ba93-ed616a159700|402bdced-d277-4374-86dc-0fbd96298ed3,Miya Ideal Plumbing Construction and Refurbications | MIYA IDEAL PLUMBING CONSTITUTION ,South Coast | Other KZN,manual_entity_review
+whatsapp_number,659692597,2,c18b3de6-93eb-4d4b-83c2-fbaf5647c764|2f37e68b-932f-4fd6-8f37-ea285f4b8e63,HMS PLUMBING  | HMS Plumbing,Other KZN,manual_entity_review
+whatsapp_number,834934866,2,0ba8827a-1cbb-4ddb-ab19-ff7e0af3837f|396dd68f-cdba-4b0b-a5ec-1c6a15b9de6b,J AND TT PLUMBERS & CIVILWORKS PTY LTD  | J and TT Plumbers and Civilsworks,Durban South,manual_entity_review
+whatsapp_number,631635905,2,22c63d86-9288-431a-ad61-b8be86ec6338|a864f66b-1e5b-4d9a-b7e9-246d496b9b0d,Sipho plumbing solutions  | Sipho Plumbing Solutions,Durban South,manual_entity_review
+pirb_number,498008,2,d980217b-f2ee-4512-ade1-039c9ac90529|6859e5fb-54dc-41b8-9fd3-a1fb82d1ea48,Osolwazi Plumbers  | Osolwazi Enterprise,Pinetown,manual_entity_review
+pirb_number,856009,2,6d07200c-d8d5-4a56-bc1c-057fe4c2d2a0|6e07ebb0-884a-4a53-90f7-7870a3666fe7,DPH SIZANI PLUMBERS AND DRAINLAYERS  | DPH Sizani Investment Trading,Durban South,manual_entity_review
+pirb_number,1046324,2,340fafed-4982-462b-b944-e3b16ba60317|ff8dad45-60f4-4266-9eb9-0f20d639ad38,Canpro Plumbing and Maintenance | Canpro plumbing and maintenance ,Durban North,manual_entity_review
+pirb_number,1109524,2,00447ff6-561b-43f6-ac12-5169de95428a|4afd082f-3e29-4f48-bd9c-d29ab35cf271,Td Project   | New Adventures Trading,Durban South,manual_entity_review
+pirb_number,497907,2,86bc6194-ffcc-4a9e-a2a1-757bf2a53755|318da484-cbce-4390-badd-1ad4c60461b6,Plumbitrite Contractors cc | Studio Ideate,Durban North | Durban South,manual_entity_review
+pirb_number,777118,2,b8da0a7e-6911-4325-adbd-b70e3cc132aa|fe4cd78b-321c-4d2d-a968-f965a1a8a9f6,Hlangalezwe Contractors | Hlangalezwe Contractors (Pty) Ltd ,Durban North,manual_entity_review
+pirb_number,638918,2,a13f4a40-46cc-4799-98d6-69b99fd6b500|f8a6b24e-7a05-4f6f-8f28-5ecaf016506a,Tessling Plumbers & Maintenance | Tessling Plumbers,Durban South | Durban North,manual_entity_review
+pirb_number,861418,2,8635fa0e-9aa6-4b4c-baed-586bc3778e94|29f72f05-6899-405b-af25-bad9fa10e5d6,Bizayo Project Works | Bizayo Projects Works,Durban North,manual_entity_review
+pirb_number,874021,2,cf46d150-ba99-441f-8a2b-0f44e6430390|ec1db40c-1029-4c95-a7ef-e507ba004862,Bhekinkosi Plumber  | Stone cc plumber,PMB,manual_entity_review
+pirb_number,770709,3,fb6ae641-7de8-460e-ac1a-0675f40238b2|10f3c341-031f-4f89-a6d6-ea6ec49df750|f0fd2286-1124-4987-a5b4-971d920d3a9d,Live H20 Projects | Live H2o PROJECTS (Pty) Ltd | Masindisiwe Projects Pty Ltd ,Durban North,manual_entity_review
+pirb_number,938422,2,d73ee408-5d84-461f-8916-2b547dd21e6e|26976631-0d03-4c96-af85-76ec4c2f1acd,HazyMan's Plumbers  | HazyMans Plumbers,Durban North,manual_entity_review
+pirb_number,738815,2,7be94b40-1b31-4de7-8a81-5b68415816f7|9558dbbd-b2d1-446f-8d55-e6789ef44b60,Jessfloplumbers and Building Renovations  | Jessflo Plumbers And Building Maintenance,Durban North | Ballito,manual_entity_review
+pirb_number,861221,2,0ba8827a-1cbb-4ddb-ab19-ff7e0af3837f|396dd68f-cdba-4b0b-a5ec-1c6a15b9de6b,J AND TT PLUMBERS & CIVILWORKS PTY LTD  | J and TT Plumbers and Civilsworks,Durban South,manual_entity_review
