@@ -12,7 +12,7 @@ export default function PrivacyPage() {
       <section className="bg-gradient-to-br from-brand to-brand-dark text-white py-10 sm:py-14 px-4 sm:px-6">
         <div className="max-w-3xl mx-auto text-center">
           <h1 className="font-display text-2xl sm:text-4xl font-extrabold mb-2">Privacy Policy</h1>
-          <p className="text-sm opacity-80">Last updated: 16 August 2026</p>
+          <p className="text-sm opacity-80">Last updated: 9 September 2026</p>
         </div>
       </section>
 
@@ -44,6 +44,7 @@ export default function PrivacyPage() {
           <li><strong>Optional analytics:</strong> With your consent, Google Analytics 4 collects usage information such as pages visited, device type, interaction timing, and approximate location. We do not send booking descriptions or contact-form messages to Google Analytics.</li>
           <li><strong>First-party conversion records:</strong> We record limited operational events such as a WhatsApp click or completed booking, including the profile, source page, area or service filter. These records are used to measure whether the directory produces useful connections and exclude message content.</li>
           <li><strong>Browser storage and cookies:</strong> Essential cookies support authentication. Your analytics choice is stored in the browser. We do not use the directory for advertising personalisation.</li>
+          <li><strong>Directory area preference:</strong> When you choose an area or open an area-specific homepage link, the functional <code>kzn_directory_area</code> cookie remembers only that coarse directory area (or your explicit All KZN choice) on this browser for 30 days. The homepage uses it to show that area on a return visit; an area in the URL always takes precedence. This preference does not contain an address, coordinates, search text or account details. We do not request GPS permission or infer your location from your IP address for directory searches. Change the area selector, choose All KwaZulu-Natal to stop local filtering, or clear this cookie in your browser to forget the preference. Searches still work if cookies are blocked.</li>
         </ul>
 
         <h2>3. How We Use Your Information</h2>

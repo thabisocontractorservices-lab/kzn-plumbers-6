@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { ArrowRight, BadgeCheck, Building2, MapPin, ShieldQuestion, Wrench } from "lucide-react";
 import { DirectorySearch } from "@/components/DirectorySearch";
-import { DIRECTORY_SERVICES, parseDirectorySearch } from "@/lib/directory";
+import { DIRECTORY_SERVICES } from "@/lib/directory";
+import { DIRECTORY_AREA_COOKIE, INVALID_DIRECTORY_AREA_MESSAGE, resolveHomepageDirectorySearch } from "@/lib/directory-location";
 import { REGIONS } from "@/lib/regions";
 import { safeJsonLd } from "@/lib/json-ld";
 import { absoluteUrl, SITE_NAME, SITE_URL } from "@/lib/site";
@@ -29,13 +31,16 @@ export const metadata: Metadata = {
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 export default async function HomePage({ searchParams }: { searchParams: SearchParams }) {
-  const search = parseDirectorySearch(await searchParams);
+  // Resolve the user's coarse preference before fetching SSR results. Reading
+  // cookies makes this page request-specific; the API remains URL-only.
+  const [input, cookieStore] = await Promise.all([searchParams, cookies()]);
+  const { search, areaSource, invalidArea } = resolveHomepageDirectorySearch(input, cookieStore.get(DIRECTORY_AREA_COOKIE)?.value);
   const [directory, stats] = await Promise.allSettled([
-    searchPublicPlumbers(search),
+    invalidArea ? Promise.resolve(null) : searchPublicPlumbers(search),
     getPublicDirectoryStats(),
   ]);
   const initialResult = directory.status === "fulfilled" ? directory.value : null;
-  const initialError = directory.status === "rejected"
+  const initialError = invalidArea ? INVALID_DIRECTORY_AREA_MESSAGE : directory.status === "rejected"
     ? "The directory could not load. This is a read error, not a report of zero matching businesses. Please try again shortly."
     : null;
   const totalRecords = stats.status === "fulfilled" ? stats.value.records : null;
@@ -101,6 +106,7 @@ export default async function HomePage({ searchParams }: { searchParams: SearchP
         key={JSON.stringify(search)}
         initialResult={initialResult}
         initialSearch={search}
+        initialAreaSource={areaSource}
         initialError={initialError}
       />
 

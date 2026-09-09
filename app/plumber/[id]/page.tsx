@@ -9,7 +9,7 @@ import { ProfileViewTracker } from "@/components/ProfileViewTracker";
 import { ReviewForm } from "@/components/ReviewForm";
 import { ReviewLinkPanel } from "@/components/ReviewLinkPanel";
 import { TrackedContactLink } from "@/components/TrackedContactLink";
-import { getPublicPlumbers } from "@/lib/directory-data";
+import { getRelatedPlumbers } from "@/lib/directory-data";
 import { isIndexableProfile, usableProfileAbout } from "@/lib/content-quality";
 import { safeJsonLd } from "@/lib/json-ld";
 import { reviewUrl } from "@/lib/google/places";
@@ -63,14 +63,14 @@ export default async function PlumberPage({ params }: { params: Promise<{ id: st
   const region = regionForArea(plumber.area);
   const [labelsResult, reviewsResult, googleResult, relatedResult] = await Promise.allSettled([
     getPublicCredentialLabels(plumber.id), getPublicProfileReviews(plumber.id),
-    getPublicGoogleReviews(plumber.id), getPublicPlumbers({ areas: [plumber.area], limit: 5 }),
+    getPublicGoogleReviews(plumber.id), getRelatedPlumbers(plumber.id, plumber.area),
   ]);
   const certifications = labelsResult.status === "fulfilled" ? labelsResult.value : [];
   const internalReviews = reviewsResult.status === "fulfilled" ? reviewsResult.value.current : [];
   const firstPartySummary = reviewsResult.status === "fulfilled" && reviewsResult.value.available ? reviewsResult.value.summary : null;
   const reviewHistoryCount = reviewsResult.status === "fulfilled" ? reviewsResult.value.historicalCount : 0;
   const googleReviews = googleResult.status === "fulfilled" ? googleResult.value : [];
-  const related = relatedResult.status === "fulfilled" ? relatedResult.value.plumbers.filter((item) => item.id !== plumber.id).slice(0, 3) : [];
+  const related = relatedResult.status === "fulfilled" ? relatedResult.value : [];
   const googleRating = Number(plumber.google_rating);
   const googleCount = plumber.google_review_count;
   const hasGoogleRating = googleCount != null && googleCount > 0 && Number.isFinite(googleRating) && googleRating >= 1 && googleRating <= 5;

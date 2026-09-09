@@ -3,7 +3,7 @@ export const DIRECTORY_AREAS = [
   { key: "durban-north", label: "Durban North", dbAreas: ["Durban North"] },
   { key: "durban-south", label: "Durban South", dbAreas: ["Durban South"] },
   { key: "pietermaritzburg", label: "Pietermaritzburg (PMB)", dbAreas: ["PMB"] },
-  { key: "ballito", label: "Ballito", dbAreas: ["Ballito"] },
+  { key: "ballito", label: "Ballito / North Coast", dbAreas: ["Ballito"] },
   { key: "richards-bay", label: "Richards Bay", dbAreas: ["Richards Bay"] },
   { key: "newcastle", label: "Newcastle", dbAreas: ["Newcastle"] },
   { key: "pinetown", label: "Pinetown", dbAreas: ["Pinetown"] },
@@ -51,7 +51,9 @@ export function parseDirectorySearch(input: Record<string, string | string[] | u
   const page = Number(firstSearchValue(input.page) || "1");
   return {
     q: firstSearchValue(input.q).trim().slice(0, 80),
-    area: normaliseAreaKey(firstSearchValue(input.area)),
+    // Keep unsupported explicit locations visible so callers can reject them,
+    // rather than quietly turning a misspelled area into a province-wide search.
+    area: normaliseAreaKey(firstSearchValue(input.area)) || firstSearchValue(input.area),
     service: normaliseServiceKey(firstSearchValue(input.service)),
     filter: ["credential", "claimed", "available"].includes(filter) ? filter as DirectoryFilter : "all",
     emergency: filter === "emergency" || ["1", "true"].includes(firstSearchValue(input.emergency)),
@@ -63,7 +65,9 @@ export function parseDirectorySearch(input: Record<string, string | string[] | u
 export function directorySearchParams(state: DirectorySearchState): URLSearchParams {
   const params = new URLSearchParams();
   if (state.q) params.set("q", state.q);
-  if (state.area) params.set("area", state.area);
+  // An empty area is an explicit All KZN choice; omitting it would allow the
+  // homepage's remembered area to override shared URLs or Back/Forward entries.
+  params.set("area", state.area);
   if (state.service) params.set("service", state.service);
   if (state.filter !== "all") params.set("filter", state.filter);
   if (state.emergency && state.filter !== "emergency") params.set("emergency", "1");
@@ -85,10 +89,13 @@ export function getServiceConfig(key?: string | null) {
 
 export function normaliseAreaKey(value?: string | null): string {
   if (!value) return "";
-  const direct = getAreaConfig(value);
+  const normalised = value.trim().toLowerCase();
+  const direct = getAreaConfig(normalised);
   if (direct) return direct.key;
+  // These are names for the existing Ballito bucket, not wider suburb coverage.
+  if (["north coast", "north-coast", "ballito-north-coast"].includes(normalised)) return "ballito";
   const matchingAreas = DIRECTORY_AREAS.filter((area) =>
-    area.dbAreas.some((dbArea) => dbArea.toLowerCase() === value.trim().toLowerCase()),
+    area.dbAreas.some((dbArea) => dbArea.toLowerCase() === normalised),
   );
   const match = matchingAreas.find((area) => area.dbAreas.length === 1) ?? matchingAreas[0];
   return match?.key ?? "";

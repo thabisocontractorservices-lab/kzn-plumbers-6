@@ -3,14 +3,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Clock3, Loader2, MapPin, Search, ShieldCheck, SlidersHorizontal } from "lucide-react";
-import { DEFAULT_DIRECTORY_SEARCH, DIRECTORY_AREAS, DIRECTORY_SERVICES, DIRECTORY_PAGE_SIZE, directorySearchParams, parseDirectorySearch, type DirectorySearchState, type DirectoryFilter, type DirectorySort } from "@/lib/directory";
+import { DIRECTORY_AREAS, DIRECTORY_SERVICES, DIRECTORY_PAGE_SIZE, directorySearchParams, getAreaConfig, parseDirectorySearch, type DirectorySearchState, type DirectoryFilter, type DirectorySort } from "@/lib/directory";
+import { clearDirectoryJobFilters, directoryAreaCookie, INVALID_DIRECTORY_AREA_MESSAGE, isSupportedDirectoryArea, type DirectoryAreaSource } from "@/lib/directory-location";
 import { trackEvent } from "@/lib/analytics";
 import { PlumberCard } from "@/components/PlumberCard";
 import type { PublicDirectoryResult } from "@/lib/directory-public-types";
 
-export function DirectorySearch({ initialResult, initialSearch, initialError = null }: {
+function rememberArea(area: string) {
+  const cookie = directoryAreaCookie(area, window.location.protocol === "https:");
+  if (cookie) {
+    try { document.cookie = cookie; } catch { /* Searches still work when browser storage is blocked. */ }
+  }
+}
+
+export function DirectorySearch({ initialResult, initialSearch, initialAreaSource, initialError = null }: {
   initialResult: PublicDirectoryResult | null;
   initialSearch: DirectorySearchState;
+  initialAreaSource: DirectoryAreaSource;
   initialError?: string | null;
 }) {
   const pathname = usePathname();
@@ -22,8 +31,11 @@ export function DirectorySearch({ initialResult, initialSearch, initialError = n
   const controller = useRef<AbortController | null>(null);
   const sequence = useRef(0);
   const pendingKey = useRef<string | null>(null);
+  const initialHistoryReady = useRef(false);
   const loadedKey = useRef<string | null>(initialResult ? directorySearchParams(initialSearch).toString() : null);
   const { area, service, filter, sort, page } = search;
+  const areaConfig = getAreaConfig(area);
+  const invalidArea = !isSupportedDirectoryArea(area);
   const urgency = search.emergency ? "emergency" : "routine";
   const plumbers = result?.plumbers ?? [];
   const total = result?.total ?? null;
@@ -32,13 +44,23 @@ export function DirectorySearch({ initialResult, initialSearch, initialError = n
   const fetchResults = useCallback(async (next: DirectorySearchState, history: "push" | "none" = "push", force = false) => {
     const params = directorySearchParams(next);
     const key = params.toString();
-    const href = key ? `${pathname}?${key}` : pathname;
+    const href = `${pathname}?${key}${window.location.hash}`;
     // Native history updates the URL without a second RSC/router request.
-    if (history === "push" && `${window.location.pathname}${window.location.search}` !== href) {
+    if (history === "push" && `${window.location.pathname}${window.location.search}${window.location.hash}` !== href) {
       window.history.pushState(null, "", href);
     }
     setSearch(next);
     setQuery(next.q);
+    if (!isSupportedDirectoryArea(next.area)) {
+      controller.current?.abort();
+      sequence.current += 1;
+      pendingKey.current = null;
+      loadedKey.current = null;
+      setLoading(false);
+      setResult(null);
+      setError(INVALID_DIRECTORY_AREA_MESSAGE);
+      return;
+    }
     if (!force && (loadedKey.current === key || pendingKey.current === key)) return;
     controller.current?.abort();
     const abort = new AbortController();
@@ -69,8 +91,24 @@ export function DirectorySearch({ initialResult, initialSearch, initialError = n
   }, [pathname]);
 
   useEffect(() => {
+    if (!initialHistoryReady.current) {
+      initialHistoryReady.current = true;
+      // Pin the SSR area (even All KZN) to this history entry. Back/Forward must
+      // restore that entry, not consult a cookie changed by a later selection.
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has("area")) {
+        url.searchParams.set("area", initialSearch.area);
+        window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+      }
+      if (initialAreaSource === "url") rememberArea(initialSearch.area);
+    }
     function restoreHistory() {
-      const next = parseDirectorySearch(Object.fromEntries(new URLSearchParams(window.location.search)));
+      const params = new URLSearchParams(window.location.search);
+      const input: Record<string, string> = {};
+      // Match SSR's first-value rule for repeated URL parameters.
+      params.forEach((value, key) => { if (!(key in input)) input[key] = value; });
+      const next = parseDirectorySearch(input);
+      if (params.has("area")) rememberArea(next.area);
       void fetchResults(next, "none");
     }
     window.addEventListener("popstate", restoreHistory);
@@ -79,10 +117,16 @@ export function DirectorySearch({ initialResult, initialSearch, initialError = n
       controller.current?.abort();
       sequence.current += 1;
     };
-  }, [fetchResults]);
+  }, [fetchResults, initialAreaSource, initialSearch.area]);
 
   function applyFilter(changes: Partial<DirectorySearchState>) {
+    if (changes.area !== undefined) rememberArea(changes.area);
     void fetchResults({ ...search, q: query.trim().slice(0, 80), ...changes, page: 1 });
+  }
+
+  function browseAllKzn() {
+    rememberArea("");
+    void fetchResults({ ...clearDirectoryJobFilters(search), area: "" });
   }
 
   function submitSearch(event: React.FormEvent) {
@@ -116,7 +160,8 @@ export function DirectorySearch({ initialResult, initialSearch, initialError = n
               Area
               <span className="relative block">
                 <MapPin className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" aria-hidden="true" />
-                <select value={area} onChange={(event) => applyFilter({ area: event.target.value })} className="input pl-9">
+                <select value={area} onChange={(event) => applyFilter({ area: event.target.value })} aria-describedby="directory-area-help" className="input pl-9">
+                  {invalidArea && <option value={area} disabled>Unrecognised area — choose below</option>}
                   <option value="">All KwaZulu-Natal</option>
                   {DIRECTORY_AREAS.map((option) => (
                     <option value={option.key} key={option.key}>{option.label}</option>
@@ -163,6 +208,13 @@ export function DirectorySearch({ initialResult, initialSearch, initialError = n
             </button>
           </div>
 
+          <p id="directory-area-help" className="mt-3 text-sm text-slate-600" aria-live="polite">
+            {invalidArea ? "That area is not recognised. Choose a listed area; no wider search has been run." : areaConfig
+              ? `Showing records in ${areaConfig.label}. We remember your chosen area on this browser for 30 days if cookies are enabled.`
+              : "Choose your area for local matches — currently all KZN. We do not detect your location."}
+            {area === "ballito" && " North Coast currently matches records stored as Ballito only, not every North Coast suburb. Durban North is a separate area; confirm service coverage directly."}
+          </p>
+
           <label className="relative mt-3 block">
             <span className="sr-only">Search by business name, suburb, or plumbing problem</span>
             <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" aria-hidden="true" />
@@ -180,10 +232,10 @@ export function DirectorySearch({ initialResult, initialSearch, initialError = n
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Current directory results</p>
               <h2 className="font-display text-2xl font-bold text-slate-950 sm:text-3xl">
-                {total !== null ? `${total.toLocaleString()} plumber${total === 1 ? "" : "s"} match` : loading ? "Loading matches" : "Directory unavailable"}
+                {invalidArea ? "Choose a listed area" : total !== null ? `${total.toLocaleString()} plumber${total === 1 ? "" : "s"} match` : loading ? "Loading matches" : "Directory unavailable"}
               </h2>
               <p className="mt-1 text-sm text-slate-600">
-                Publication is not an endorsement. Default order is A–Z; highest rated uses Google rating, then review count. Taking work requires recent business opt-in.
+                Within your selected area, the default is claimed profiles first, then unclaimed records, A–Z in each group. Highest rated uses Google rating, then review count; Name A–Z ignores claim status. Publication is not an endorsement. Taking work requires recent business opt-in.
               </p>
             </div>
 
@@ -218,7 +270,7 @@ export function DirectorySearch({ initialResult, initialSearch, initialError = n
                 aria-label="Sort plumbers"
                 className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700"
               >
-                <option value="recommended">Directory order (A–Z)</option>
+                <option value="recommended">Claimed profiles first</option>
                 <option value="rated">Highest Google rated</option>
                 <option value="name">Name A–Z</option>
               </select>
@@ -228,7 +280,9 @@ export function DirectorySearch({ initialResult, initialSearch, initialError = n
           {error && (
             <div role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
               {error}
-              <button type="button" className="ml-3 font-bold underline" onClick={() => void fetchResults(search, "none", true)}>Retry</button>
+              {invalidArea
+                ? <button type="button" className="ml-3 font-bold underline" onClick={browseAllKzn}>Browse all KZN</button>
+                : <button type="button" className="ml-3 font-bold underline" onClick={() => void fetchResults(search, "none", true)}>Retry</button>}
             </div>
           )}
 
@@ -241,17 +295,16 @@ export function DirectorySearch({ initialResult, initialSearch, initialError = n
           ) : error ? null : plumbers.length === 0 ? (
             <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-10 text-center">
               <h3 className="font-display text-xl font-bold text-slate-950">{page > 1 ? "No records on this page" : "No exact match yet"}</h3>
-              <p className="mt-2 text-sm text-slate-600">{page > 1 ? "The result set may have changed. Return to its first page." : "Broaden the area or job type, or browse all KZN records."}</p>
+              <p className="mt-2 text-sm text-slate-600">{page > 1 ? "The result set may have changed. Return to its first page." : "Clear job filters to try again in the same area. We never expand your area automatically."}</p>
               {page > 1 && <button type="button" className="btn-primary mt-4 mr-3" onClick={() => void fetchResults({ ...search, page: 1 })}>First result page</button>}
               <button
                 type="button"
                 className="btn-secondary mt-4"
-                onClick={() => {
-                  void fetchResults({ ...DEFAULT_DIRECTORY_SEARCH });
-                }}
+                onClick={() => void fetchResults(clearDirectoryJobFilters(search))}
               >
-                Clear filters
+                Clear job filters
               </button>
+              <button type="button" className="btn-secondary ml-3 mt-4" onClick={browseAllKzn}>Browse all KZN</button>
             </div>
           ) : (
             <>

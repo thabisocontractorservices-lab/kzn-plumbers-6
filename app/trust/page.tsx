@@ -86,7 +86,10 @@ export default function TrustPage() {
             <h2 className="font-display text-3xl font-bold text-slate-950">How listings are ordered</h2>
           </div>
           <p className="mt-4 text-sm leading-relaxed text-slate-700">
-            Search relevance comes first: area, listed service and requested urgency. Within a relevant set, the directory can consider current verification state, whether the business claimed its profile, profile completeness and visible review data. We do not sell verification and paid placement must never be labelled “top rated” or mixed into the normal order without clear sponsorship disclosure.
+            Your selected area, listed service and requested urgency filter the results before ordering. The default “Claimed profiles first” puts claimed businesses ahead of unclaimed directory records, with names A–Z inside each group. Claim status does not bring a business from another area into your local results. A claim is not a credential check, recommendation or workmanship guarantee.
+          </p>
+          <p className="mt-3 text-sm leading-relaxed text-slate-700">
+            If you choose “Highest Google rated”, results are ordered by Google rating, then Google review count, then name. “Name A–Z” orders by name without claim priority. These explicit sorts replace the default; credential state and profile completeness do not add hidden ranking boosts. We do not sell verification and paid placement must never be labelled “top rated” or mixed into the normal order without clear sponsorship disclosure.
           </p>
         </section>
 

@@ -26,6 +26,7 @@ export async function generateMetadata({ searchParams }: { searchParams: Search 
   const search = await searchParams;
   const page = pageNumber(search.page);
   const area = normaliseAreaKey(value(search.area));
+  if (value(search.area) && !area) return { title: "Area not recognised | KZN Plumbers", robots: { index: false, follow: true } };
   const canonical = pageHref(page, area);
   return {
     title: `All KZN Plumber Directory Records${page > 1 ? ` — Page ${page}` : ""} | KZN Plumbers`,
@@ -40,6 +41,8 @@ export default async function AllPlumbersPage({ searchParams }: { searchParams: 
   const search = await searchParams;
   const page = pageNumber(search.page);
   const areaKey = normaliseAreaKey(value(search.area));
+  // Never treat an unknown explicitly requested location as all of KwaZulu-Natal.
+  if (value(search.area) && !areaKey) notFound();
   const area = getAreaConfig(areaKey);
   const limit = 24;
   const { plumbers, total } = await getPublicPlumbers({ areas: area?.dbAreas, limit, offset: (page - 1) * limit });
