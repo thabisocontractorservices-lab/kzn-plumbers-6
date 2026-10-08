@@ -68,7 +68,7 @@ export function AdminWorkspace() {
 
   return <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
     <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
-      <div><p className="text-xs font-bold uppercase tracking-widest text-brand">KZN Plumbers · administration</p><h1 className="mt-2 text-3xl font-bold text-slate-950">Directory workspace</h1><p className="mt-2 text-sm text-slate-600">Manage published listings, ownership requests and review history without a new database setup.</p></div>
+      <div><p className="text-xs font-bold uppercase tracking-widest text-brand">KZN Plumbers · administration</p><h1 className="mt-2 text-3xl font-bold text-slate-950">Directory workspace</h1><p className="mt-2 text-sm text-slate-600">Manage published listings, ownership requests and review history without a new database setup.</p><a href="/admin/leads" className="btn mt-3 bg-green-600 text-white hover:bg-green-700">📥 Leads &amp; quote requests →</a></div>
       <button className="btn-secondary" onClick={()=>setRefresh(v=>v+1)} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading?"animate-spin":""}`} aria-hidden="true"/>Refresh</button>
     </header>
     <nav className="mb-6 flex gap-2 overflow-x-auto border-b border-slate-200 pb-4" aria-label="Administration sections">{TABS.map(t=><button key={t.key} onClick={()=>navigate({view:t.key,filter:"all",q:""})} aria-current={view===t.key?"page":undefined} className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold ${view===t.key?"bg-slate-950 text-white":"border border-slate-200 bg-white text-slate-700 hover:border-brand"}`}><t.icon className="h-4 w-4" aria-hidden="true"/>{t.label}</button>)}</nav>

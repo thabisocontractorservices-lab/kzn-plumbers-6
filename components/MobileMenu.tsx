@@ -42,6 +42,7 @@ export function MobileMenu() {
           <button type="button" aria-label="Close menu" className="fixed inset-0 z-40 bg-black/35" onClick={close} />
           <div className="absolute left-0 right-0 top-full z-50 border-t border-white/10 bg-brand shadow-xl">
             <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-4">
+              <MobileLink href="/get-estimate" label="Get a free estimate" active={pathname.startsWith("/get-estimate")} onClick={close} highlight />
               <MobileLink href="/" label="Find a plumber" active={pathname === "/"} onClick={close} />
               <MobileLink href="/#regions" label="Browse by area" active={false} onClick={close} />
               <MobileLink href="/#services" label="Browse by service" active={false} onClick={close} />

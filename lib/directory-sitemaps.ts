@@ -76,7 +76,7 @@ const readInventory = cache(unstable_cache(async (type: "profiles" | "content" |
 
 export async function getSitemapEntries(type: SitemapType): Promise<SitemapEntry[]> {
   // Omit lastmod for code-authored pages without a trustworthy content-change date.
-  if (type === "core") return ["/", "/all-plumbers", "/about", "/contact", "/trust", "/help", "/corrections", "/complaints", "/privacy", "/terms", "/resources", "/resources/plumbing-coc-kzn", "/resources/water-leak-or-outage-kzn"]
+  if (type === "core") return ["/", "/get-estimate", "/all-plumbers", "/about", "/contact", "/trust", "/help", "/corrections", "/complaints", "/privacy", "/terms", "/resources", "/resources/plumbing-coc-kzn", "/resources/water-leak-or-outage-kzn"]
     .map((path) => ({ loc: `${SITE_URL}${path === "/" ? "" : path}` }));
   if (type === "regions") return REGIONS.map((region) => ({ loc: `${SITE_URL}/plumbers/${region.slug}` }));
   if (type === "services") return SERVICE_GUIDES.map((service) => ({ loc: `${SITE_URL}/services/${service.slug}` }));

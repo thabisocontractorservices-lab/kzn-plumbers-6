@@ -13,6 +13,7 @@ import {
 } from "@/lib/verification";
 import type { PublicPlumber } from "@/lib/directory-public-types";
 import { directoryContact } from "@/lib/directory-contact";
+import { normaliseAreaKey } from "@/lib/directory";
 
 export function PlumberCard({
   plumber,
@@ -142,7 +143,16 @@ export function PlumberCard({
       </div>
 
       <div className="mt-auto grid grid-cols-[1fr_auto] gap-2 pt-4">
-        {waLink ? (
+        {plumber.is_claimed ? (
+          // Claimed businesses: capture the enquiry first so it's tracked and the plumber gets the job details.
+          <Link
+            href={`/get-estimate?plumber=${plumber.id}${normaliseAreaKey(plumber.area) ? `&area=${normaliseAreaKey(plumber.area)}` : ""}`}
+            onClick={() => trackEvent("booking_submit", { plumber_id: plumber.id, area: plumber.area, source_page: sourcePage, rank_position: rankPosition })}
+            className="btn bg-green-600 text-white hover:bg-green-700"
+          >
+            Request a Quote
+          </Link>
+        ) : waLink ? (
           <a href={waLink} target="_blank" rel="noopener noreferrer"
             onClick={() => trackContact("whatsapp_click")} className="btn-whatsapp">
             <MessageCircle className="h-4 w-4" aria-hidden="true" /> WhatsApp

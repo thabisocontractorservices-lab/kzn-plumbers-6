@@ -207,3 +207,9 @@ No ranking position is guaranteed. The release should be judged by accurate inde
 
 - `www.kznplumbers.co.za` must be a CNAME to the value shown in Vercel → Domains (DNS only / grey cloud in Cloudflare).
 - GoHighLevel branded links must use `links.kznplumbers.co.za`, never `www`. If the site ever shows a plain "OK!" page, check the `www` record first.
+
+## Lead capture (added 2026-10-08)
+
+- Run `supabase/migrations/009_leads.sql` before deploying the lead release. See `LEADS-PHASE-1-2026-10-08.md`.
+- Leads are only offered to claimed, published plumbers with `leads_enabled = true`. Never add unclaimed listings to lead routing.
+- Smoke test after each deploy: `/get-estimate` loads; `GET /api/leads/plumbers?area=durban-north&service=blocked_drain` returns JSON without phone numbers; `/admin/leads` loads for an admin.

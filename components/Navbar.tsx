@@ -20,6 +20,7 @@ export function Navbar() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Link href="/get-estimate" className="hidden rounded-lg bg-green-600 px-3.5 py-2 text-sm font-bold text-white shadow hover:bg-green-700 sm:inline-flex">Free estimate</Link>
           <AuthNav />
           <MobileMenu />
         </div>
