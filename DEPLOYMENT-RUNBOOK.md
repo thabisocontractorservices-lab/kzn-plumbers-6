@@ -196,3 +196,14 @@ Do not roll back by deleting plumber or SEO records.
 - Whether any new page type has enough evidence to scale
 
 No ranking position is guaranteed. The release should be judged by accurate indexation, qualified contacts, response quality and booked work—not page count.
+
+## Invoicing (added 2026-10-08)
+
+- Invoice PDFs are generated on demand by `GET /api/invoices/:id/pdf` (server-side, `@react-pdf/renderer`). Never reintroduce `window.print()` as a "download".
+- Run `supabase/migrations/008_invoices.sql` before or straight after deploying the invoicing release. See `INVOICING-UPGRADE-2026-10-08.md`.
+- Smoke test after each deploy: logged-out `curl -i https://www.kznplumbers.co.za/api/invoices/00000000-0000-0000-0000-000000000000/pdf` must return 401; a signed-in plumber's **Download PDF** must save a `.pdf` file.
+
+## DNS guard (added 2026-10-07)
+
+- `www.kznplumbers.co.za` must be a CNAME to the value shown in Vercel → Domains (DNS only / grey cloud in Cloudflare).
+- GoHighLevel branded links must use `links.kznplumbers.co.za`, never `www`. If the site ever shows a plain "OK!" page, check the `www` record first.
