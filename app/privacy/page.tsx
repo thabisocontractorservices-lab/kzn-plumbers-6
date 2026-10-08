@@ -65,6 +65,17 @@ export default function PrivacyPage() {
           <li><strong>Legal requirements:</strong> We may disclose information if required by law or to protect our rights.</li>
         </ul>
 
+        <h2 id="quote-requests">4A. Free Estimates and Quote Requests</h2>
+        <p>When you ask for a free estimate or a quote, we collect your name, cellphone and WhatsApp number, optional email, your suburb and area, the job you need done, how urgent it is, your description and any photos you upload. We also record which page or advert brought you to the site (for example a Google or Facebook campaign tag) so we can see which channels help homeowners.</p>
+        <ul>
+          <li><strong>Who sees it:</strong> only the plumbers you choose (up to three), or the plumber KZNPlumbers selects for you if you ask us to. Plumbers see your job details first; your phone number, WhatsApp number, email and surname are shown only to a plumber who accepts your job.</li>
+          <li><strong>Photos</strong> are stored privately and only shown to KZNPlumbers staff and the plumbers on your job, through links that expire.</li>
+          <li><strong>Why:</strong> to give you an indicative price, connect you with a plumber, follow up on whether you were helped, and prevent spam. The estimate is indicative only and is not a quotation.</li>
+          <li><strong>Marketing:</strong> we only send tips or offers if you ticked the optional marketing box. You can opt out at any time.</li>
+          <li><strong>Our tools:</strong> requests are stored with Supabase and emailed through Resend. If we connect a customer-relationship tool for messages and follow-ups, it will process your details on our behalf.</li>
+          <li><strong>How long:</strong> we keep quote requests for up to 24 months so we can handle complaints and measure plumber response, then delete or anonymise them. Ask us to delete yours sooner at any time.</li>
+        </ul>
+
         <h2>5. Data Security</h2>
         <p>
           We use industry-standard security measures to protect your data, including encrypted connections (HTTPS/SSL),

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BadgeCheck, Building2, CalendarDays, Clock3, ExternalLink, FileCheck2, Globe2, MapPin, MessageCircle, Phone, ShieldQuestion, Star } from "lucide-react";
 import { BookingForm } from "@/components/BookingForm";
+import { normaliseAreaKey } from "@/lib/directory";
 import { PlumberCard } from "@/components/PlumberCard";
 import { ProfileViewTracker } from "@/components/ProfileViewTracker";
 import { ReviewForm } from "@/components/ReviewForm";
@@ -59,6 +60,7 @@ export default async function PlumberPage({ params }: { params: Promise<{ id: st
   const primaryService = plumber.specialties?.[0] ?? "plumbing work";
   const contactMessage = `Hi, I found ${plumber.trading_name} on kznplumbers.co.za and would like to get a quote for ${primaryService.toLowerCase()} in ${plumber.area}.`;
   const { telephone, whatsappHref: waLink, phoneHref: phoneLink } = directoryContact(plumber.whatsapp_number, contactMessage);
+  const quoteHref = `/get-estimate?plumber=${plumber.id}${normaliseAreaKey(plumber.area) ? `&area=${normaliseAreaKey(plumber.area)}` : ""}`;
   const googleReviewLink = plumber.google_place_id ? reviewUrl(plumber.google_place_id) : null;
   const region = regionForArea(plumber.area);
   const [labelsResult, reviewsResult, googleResult, relatedResult] = await Promise.allSettled([
@@ -148,7 +150,9 @@ export default async function PlumberPage({ params }: { params: Promise<{ id: st
               <TrackedContactLink href={phoneLink} kind="call_click" plumberId={plumber.id} area={plumber.area} service={primaryService} className="btn-secondary"><Phone className="h-4 w-4" /> Call</TrackedContactLink>
             </>
           ) : <span className="self-center text-sm text-slate-500">Phone not recorded</span>}
-          <a href="#book" className="btn-secondary"><CalendarDays className="h-4 w-4" /> Contact</a>
+          {plumber.profile_id
+            ? <Link href={quoteHref} className="btn bg-green-600 text-white hover:bg-green-700">Request a Quote</Link>
+            : <a href="#book" className="btn-secondary"><CalendarDays className="h-4 w-4" /> Contact</a>}
         </div>
       </div>
 
@@ -228,6 +232,13 @@ export default async function PlumberPage({ params }: { params: Promise<{ id: st
 
         <aside className="space-y-5">
           <section id="book" className="panel lg:sticky lg:top-24">
+            {plumber.profile_id && (
+              <div className="mb-5 rounded-xl border-2 border-green-200 bg-green-50 p-4">
+                <h2 className="font-display text-xl font-bold text-slate-950">Get a free estimate from {plumber.trading_name}</h2>
+                <p className="mt-1 text-sm text-slate-600">Tell us what needs fixing. You&apos;ll see an estimated price range straight away, and your request goes to {plumber.trading_name} first.</p>
+                <Link href={quoteHref} className="btn mt-3 w-full bg-green-600 py-3 text-base text-white hover:bg-green-700">Request a Quote</Link>
+              </div>
+            )}
             <div className="mb-4 hidden gap-2 lg:flex">
               {phoneLink && !waLink ? (
                 <TrackedContactLink href={phoneLink} kind="call_click" plumberId={plumber.id} area={plumber.area} service={primaryService} className="btn-primary flex-1"><Phone className="h-4 w-4" /> Call</TrackedContactLink>

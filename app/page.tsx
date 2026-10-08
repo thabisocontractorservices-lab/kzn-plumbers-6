@@ -93,6 +93,10 @@ export default async function HomePage({ searchParams }: { searchParams: SearchP
               <p className="mt-5 max-w-2xl text-base leading-relaxed text-slate-200 sm:text-lg">
                 Search by job, area and urgency. See whether a credential was checked, a business claimed its profile, or a listing is an unclaimed directory record—before you make contact.
               </p>
+              <div className="mt-6 flex flex-wrap items-center gap-3">
+                <Link href="/get-estimate" className="btn bg-green-600 px-6 py-3.5 text-base text-white shadow-lg hover:bg-green-700">Get My Free Estimate</Link>
+                <span className="text-sm text-slate-300">Price range in under 60 seconds · choose up to 3 plumbers</span>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3 rounded-2xl border border-white/15 bg-white/8 p-4 backdrop-blur">
               <HeroStat value={totalRecords !== null ? totalRecords.toLocaleString() : "—"} label="Directory records" />
