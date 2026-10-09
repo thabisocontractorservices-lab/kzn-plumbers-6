@@ -10,4 +10,13 @@ describe("editorial HTML sanitiser", () => {
     expect(output).not.toContain("onclick");
     expect(output).not.toContain("javascript:");
   });
+
+  it("keeps YouTube embeds and strips every other iframe", () => {
+    const yt = sanitizeEditorialHtml('<figure class="video-embed"><iframe src="https://www.youtube-nocookie.com/embed/ADewLwTbX9c" title="Video" allowfullscreen></iframe></figure>');
+    expect(yt).toContain('src="https://www.youtube-nocookie.com/embed/ADewLwTbX9c"');
+    expect(yt).toContain('class="video-embed"');
+    const bad = sanitizeEditorialHtml('<iframe src="https://evil.example.com/x"></iframe><iframe src="javascript:alert(1)"></iframe>');
+    expect(bad).not.toContain("evil");
+    expect(bad).not.toContain("javascript");
+  });
 });
