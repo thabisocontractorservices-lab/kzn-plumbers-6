@@ -213,3 +213,8 @@ No ranking position is guaranteed. The release should be judged by accurate inde
 - Run `supabase/migrations/009_leads.sql` before deploying the lead release. See `LEADS-PHASE-1-2026-10-08.md`.
 - Leads are only offered to claimed, published plumbers with `leads_enabled = true`. Never add unclaimed listings to lead routing.
 - Smoke test after each deploy: `/get-estimate` loads; `GET /api/leads/plumbers?area=durban-north&service=blocked_drain` returns JSON without phone numbers; `/admin/leads` loads for an admin.
+
+## Blog content (added 2026-10-09)
+
+- Blog articles live in the Supabase `articles` table. One-off content scripts are kept in `supabase/content/`.
+- Article HTML may embed YouTube videos only (`<figure class="video-embed"><iframe src="https://www.youtube-nocookie.com/embed/VIDEO_ID" ...></iframe></figure>`). Other iframes are stripped by `lib/sanitize.ts`.
