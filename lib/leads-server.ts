@@ -71,13 +71,19 @@ type PlumberRow = {
   profile_id: string | null; leads_enabled?: boolean;
 };
 
-const PLUMBER_FIELDS = "id, trading_name, slug, area, service_areas, specialties, google_rating, google_review_count, verification_state, is_emergency, accepts_new_work, profile_id, leads_enabled";
-
-/** Claimed + published + lead-enabled. Unclaimed listings never receive leads. */
+/**
+ * Claimed + published + lead-enabled. Unclaimed listings never receive leads.
+ * Selects "*" so it works whether or not optional columns from older migrations
+ * (record_status, service_areas, verification_state, accepts_new_work) exist.
+ * Rows stay on the server; only the safe card fields are ever returned.
+ */
 function eligibleQuery(admin: SupabaseClient) {
-  return admin.from("plumbers").select(PLUMBER_FIELDS)
-    .eq("is_verified", true).eq("record_status", "published")
-    .not("profile_id", "is", null).eq("leads_enabled", true);
+  return admin.from("plumbers").select("*")
+    .eq("is_verified", true).not("profile_id", "is", null).eq("leads_enabled", true);
+}
+
+function isPublished(row: { record_status?: string | null }) {
+  return row.record_status == null || row.record_status === "published";
 }
 
 async function decorate(admin: SupabaseClient, rows: PlumberRow[], serviceKey: string, urgency: string): Promise<LeadPlumberCard[]> {
@@ -133,7 +139,7 @@ export async function findEligiblePlumbers(areaKey: string, serviceKey: string, 
     if (isLeadSchemaMissing(error)) throw leadSchemaError();
     throw new AccessError("Could not load plumbers right now. Please try again.", 503);
   }
-  const rows = (data ?? []) as PlumberRow[];
+  const rows = ((data ?? []) as (PlumberRow & { record_status?: string | null })[]).filter(isPublished);
   const inArea = rows.filter((r) => servesArea(r, areaKey, suburb));
   const withService = inArea.filter((r) => doesService(r, serviceKey));
   const pool = withService.length ? withService : inArea;
@@ -149,7 +155,7 @@ export async function getEligiblePlumber(id: string, serviceKey = "other", urgen
     if (isLeadSchemaMissing(error)) throw leadSchemaError();
     throw new AccessError("Could not check this plumber right now.", 503);
   }
-  if (!data) return null;
+  if (!data || !isPublished(data as { record_status?: string | null })) return null;
   const [card] = await decorate(admin, [data as PlumberRow], serviceKey, urgency);
   return card ?? null;
 }
