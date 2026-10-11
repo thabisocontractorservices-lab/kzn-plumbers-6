@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BadgeCheck, Building2, CalendarDays, Clock3, ExternalLink, FileCheck2, Globe2, MapPin, MessageCircle, Phone, ShieldQuestion, Star } from "lucide-react";
 import { BookingForm } from "@/components/BookingForm";
+import { redirectIfMoved } from "@/lib/redirects";
 import { normaliseAreaKey } from "@/lib/directory";
 import { PlumberCard } from "@/components/PlumberCard";
 import { ProfileViewTracker } from "@/components/ProfileViewTracker";
@@ -26,7 +27,10 @@ export const revalidate = 300;
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
   const plumber = await getPublicProfile(id);
-  if (!plumber) return { title: "Plumber not found | KZN Plumbers", robots: { index: false, follow: true } };
+  if (!plumber) {
+    await redirectIfMoved(`/plumber/${id}`);
+    return { title: "Plumber not found | KZN Plumbers", robots: { index: false, follow: true } };
+  }
   const canonical = `/plumber/${plumber.slug ?? id}`;
   const services = (plumber.specialties ?? []).slice(0, 3).join(", ");
   const title = `${plumber.trading_name} — Plumber in ${plumber.area} | KZN Plumbers`;
@@ -49,7 +53,10 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function PlumberPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const plumber = await getPublicProfile(id);
-  if (!plumber) notFound();
+  if (!plumber) {
+    await redirectIfMoved(`/plumber/${id}`);
+    notFound();
+  }
 
   const state = getVerificationState(plumber);
   const profileAbout = usableProfileAbout(plumber.about);

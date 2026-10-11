@@ -11,6 +11,7 @@ import { sanitizeEditorialHtml } from "@/lib/sanitize";
 import { SERVICE_GUIDES } from "@/lib/services";
 import { absoluteUrl, SITE_NAME } from "@/lib/site";
 import { getSeoPage as getPage, editorialIndexable, approvedEditorialDisposition } from "@/lib/directory-editorial";
+import { redirectIfMoved } from "@/lib/redirects";
 
 export const revalidate = 300;
 
@@ -43,7 +44,11 @@ export function generateStaticParams() { return []; }
 export default async function SeoContentPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const page = await getPage(slug);
-  if (!page) notFound();
+  if (!page) {
+    // Only admin-approved rules in redirect_rules are followed (never unvalidated page fields).
+    await redirectIfMoved(`/${slug}`);
+    notFound();
+  }
 
   // No automatic redirects from unvalidated database targets. Existing URLs remain stable.
   if (approvedEditorialDisposition(page) === "remove") notFound();

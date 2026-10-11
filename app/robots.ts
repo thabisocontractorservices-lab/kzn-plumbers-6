@@ -21,6 +21,12 @@ export default function robots(): MetadataRoute.Robots {
           "/login",
           "/register",
           "/forgot-password",
+          // Homepage search/filter combinations (e.g. /?area=PMB&specialty=Solar geyser).
+          // They duplicate the homepage; area and service landing pages are the indexable versions.
+          "/?area=",
+          "/?specialty=",
+          "/?q=",
+          "/?service=",
         ],
       },
     ],

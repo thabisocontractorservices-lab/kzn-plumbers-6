@@ -2,6 +2,8 @@ import { getPublicSupabase } from "@/lib/supabase/public";
 import { notFound } from "next/navigation";
 import { initials, formatRand } from "@/lib/utils";
 import { ClaimFlow } from "@/components/ClaimFlow";
+import { findRedirect } from "@/lib/redirects";
+import { permanentRedirect } from "next/navigation";
 
 export const revalidate = 300;
 
@@ -21,7 +23,15 @@ export default async function ClaimPage({
     .eq("is_verified", true)
     .single();
 
-  if (!plumber) notFound();
+  if (!plumber) {
+    // A renamed profile keeps its claim page: /claim/old → /claim/new (via the profile's redirect).
+    const direct = await findRedirect(`/claim/${slug}`);
+    if (direct) permanentRedirect(direct);
+    const viaProfile = await findRedirect(`/plumber/${slug}`);
+    const match = viaProfile?.match(/^\/plumber\/([^/?#]+)$/);
+    if (match) permanentRedirect(`/claim/${match[1]}`);
+    notFound();
+  }
 
   // Already claimed
   const isClaimed = !!plumber.profile_id;
