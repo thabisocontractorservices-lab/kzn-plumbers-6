@@ -218,3 +218,8 @@ No ranking position is guaranteed. The release should be judged by accurate inde
 
 - Blog articles live in the Supabase `articles` table. One-off content scripts are kept in `supabase/content/`.
 - Article HTML may embed YouTube videos only (`<figure class="video-embed"><iframe src="https://www.youtube-nocookie.com/embed/VIDEO_ID" ...></iframe></figure>`). Other iframes are stripped by `lib/sanitize.ts`.
+
+## Redirects (added 2026-10-11)
+
+- Never rename a plumber slug by deleting and re-creating the record. Updating `plumbers.slug` automatically creates a 301 in `redirect_rules` (migration 010).
+- Manual redirects: add a row to `redirect_rules` (source_path, destination_path, active = true). Live within 5 minutes.
