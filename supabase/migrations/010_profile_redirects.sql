@@ -85,7 +85,7 @@ on conflict (source_path) do update
 -- Never redirect a page that is live again (protects against loops if a slug is reused).
 update public.redirect_rules r set active = false, updated_at = now()
 where r.active and r.source_path like '/plumber/%'
-  and exists (select 1 from public.plumbers p where '/plumber/' || p.slug = r.source_path);
+  and exists (select 1 from public.plumbers p where '/plumber/' || p.slug = r.source_path and p.is_verified = true);
 
 -- 2. Automatic redirects on future slug changes
 create or replace function public.plumber_slug_redirect()
