@@ -13,18 +13,20 @@ export async function GET(request: NextRequest) {
     const { admin } = await requireAdmin(request);
     const p = request.nextUrl.searchParams;
     const { data, error } = await admin.from("plumbers")
-      .select("id, trading_name, area, service_areas, specialties, leads_enabled, is_verified, record_status, google_rating, google_review_count")
+      .select("*")
       .not("profile_id", "is", null).order("trading_name").limit(2000);
     if (error) { if (isLeadSchemaMissing(error)) throw leadSchemaError(); throw error; }
     const area = p.get("area") || "", service = p.get("service") || "", suburb = p.get("suburb") || "", q = (p.get("q") || "").toLowerCase();
-    const rows = (data ?? []).map((r) => ({
-      ...r,
+    type P = { id: string; trading_name: string; area: string; service_areas?: string[] | null; specialties?: string[] | null; leads_enabled?: boolean; is_verified?: boolean; record_status?: string | null };
+    const published = (r: P) => Boolean(r.is_verified) && (r.record_status == null || r.record_status === "published");
+    const rows = ((data ?? []) as P[]).map((r) => ({
+      id: r.id, trading_name: r.trading_name, area: r.area, specialties: r.specialties ?? [], leads_enabled: r.leads_enabled ?? false,
       area_match: area ? servesArea(r, area, suburb) : false,
       service_match: service ? doesService(r, service) : false,
-      published: r.is_verified && r.record_status === "published",
+      published: published(r),
     })).filter((r) => !q || r.trading_name.toLowerCase().includes(q) || r.area.toLowerCase().includes(q));
     rows.sort((a, b) => Number(b.area_match && b.service_match) - Number(a.area_match && a.service_match) || Number(b.area_match) - Number(a.area_match) || a.trading_name.localeCompare(b.trading_name));
-    return privateJson({ plumbers: rows.slice(0, 100), claimedTotal: data?.length ?? 0, leadEnabledTotal: (data ?? []).filter((r) => r.leads_enabled && r.is_verified && r.record_status === "published").length });
+    return privateJson({ plumbers: rows.slice(0, 100), claimedTotal: data?.length ?? 0, leadEnabledTotal: ((data ?? []) as P[]).filter((r) => r.leads_enabled && published(r)).length });
   } catch (error) { return accessFailure(error); }
 }
 
