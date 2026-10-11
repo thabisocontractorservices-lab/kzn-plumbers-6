@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { ANALYTICS_CONSENT_KEY, ANALYTICS_READY_EVENT, analyticsSourcePath, setAnalyticsPermission } from "@/lib/analytics";
+import { ANALYTICS_CONSENT_KEY, ANALYTICS_READY_EVENT, setAnalyticsPermission } from "@/lib/analytics";
+import { analyticsPath, cleanAnalyticsUrl } from "@/lib/analytics-url";
 
 type Choice = "granted" | "denied" | null;
 
@@ -39,14 +40,24 @@ export function AnalyticsConsent({ measurementId }: { measurementId?: string }) 
     const gaId = measurementId && /^G-[A-Z0-9]+$/i.test(measurementId) ? measurementId : null;
     if (gaId) (window as unknown as Record<string, unknown>)[`ga-disable-${gaId}`] = !allowed || !gaEnabled;
     if (!allowed) return;
-    const safePath = analyticsSourcePath(pathname || "/");
+    const safePath = analyticsPath(pathname || "/");
     if (gaId && gaEnabled) {
       window.dataLayer ??= [];
       // gtag's command queue uses the native Arguments shape documented by Google.
       // eslint-disable-next-line prefer-rest-params
       window.gtag ??= function () { window.dataLayer!.push(arguments); };
       const gtag = window.gtag;
-      const page = { page_location: `${window.location.origin}${safePath}`, page_path: safePath, page_referrer: "", page_title: "KZN directory" };
+      // Real page name, cleaned address (marketing tags kept, private details removed) and the
+      // referring site only (e.g. https://www.google.com/), so traffic sources are reported correctly.
+      let referrer = "";
+      try { if (document.referrer) { const r = new URL(document.referrer); if (r.host !== window.location.host) referrer = `${r.origin}/`; } } catch { /* ignore */ }
+      const privatePage = safePath === "/private" || safePath.startsWith("/dashboard") || safePath.startsWith("/get-estimate/received");
+      const page = {
+        page_location: cleanAnalyticsUrl(window.location.href),
+        page_path: safePath,
+        page_referrer: referrer,
+        page_title: privatePage ? "Private page" : document.title.slice(0, 120),
+      };
       if (!configured.current) {
         gtag("consent", "default", { analytics_storage: "granted", ad_storage: "denied", ad_user_data: "denied", ad_personalization: "denied" });
         gtag("js", new Date());
@@ -56,14 +67,14 @@ export function AnalyticsConsent({ measurementId }: { measurementId?: string }) 
           const script = document.createElement("script");
           script.id = "kzn-consented-ga";
           script.async = true;
-          script.referrerPolicy = "no-referrer";
+          script.referrerPolicy = "strict-origin-when-cross-origin";
           script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(gaId)}`;
           document.head.appendChild(script);
         }
         configured.current = true;
       } else gtag("set", page);
-      // Emit only this sanitised page view, never the query string or document referrer.
-      if (safePath !== "/private") gtag("event", "page_view", page);
+      // Wait one frame so the new page's <title> is in place before reporting it.
+      if (safePath !== "/private") requestAnimationFrame(() => gtag("event", "page_view", { ...page, page_title: privatePage ? "Private page" : document.title.slice(0, 120) }));
     }
     window.dispatchEvent(new Event(ANALYTICS_READY_EVENT));
   }, [choice, production, gaEnabled, measurementId, pathname]);
