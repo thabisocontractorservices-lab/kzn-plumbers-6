@@ -6,6 +6,7 @@ import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { AuthDebug } from "@/components/AuthDebug";
 import { AttributionCapture } from "@/components/AttributionCapture";
+import { VercelAnalytics } from "@/components/VercelAnalytics";
 
 const dmSans = DM_Sans({
   subsets: ["latin"],
@@ -66,6 +67,7 @@ export default function RootLayout({
         {process.env.NODE_ENV === "development" && <AuthDebug />}
         <AnalyticsConsent measurementId={gaId} />
         <AttributionCapture />
+        <VercelAnalytics />
       </body>
     </html>
   );
