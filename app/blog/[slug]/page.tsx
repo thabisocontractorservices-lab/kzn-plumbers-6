@@ -6,6 +6,8 @@ import { safeJsonLd } from "@/lib/json-ld";
 import { absoluteUrl, SITE_NAME } from "@/lib/site";
 import { getArticle, getArticleList, editorialIndexable, approvedEditorialDisposition } from "@/lib/directory-editorial";
 import { realPastDate } from "@/lib/directory-seo";
+import { REGIONS } from "@/lib/regions";
+import { SERVICE_GUIDES } from "@/lib/services";
 
 export const revalidate = 300;
 
@@ -61,11 +63,24 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
 
       <article className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">
         <div className="seo-content" dangerouslySetInnerHTML={{ __html: body }} />
-        <aside className="mt-10 rounded-2xl border border-slate-200 bg-slate-100 p-6 text-center">
+        <aside className="mt-10 rounded-2xl border border-green-200 bg-green-50 p-6 text-center">
           <h2 className="font-display text-xl font-bold text-slate-950">Need a KZN plumber?</h2>
-          <p className="mt-2 text-sm text-slate-600">Compare relevant directory records, read the verification label and contact the business directly.</p>
-          <Link href="/#directory-results" className="btn-primary mt-5">Search the directory</Link>
+          <p className="mt-2 text-sm text-slate-600">See a free price estimate in under a minute, then choose up to 3 reviewed local plumbers to quote.</p>
+          <div className="mt-5 flex flex-wrap justify-center gap-3">
+            <Link href="/get-estimate" className="btn bg-green-600 text-white hover:bg-green-700">Get a free estimate</Link>
+            <Link href="/#directory-results" className="btn-secondary">Search the directory</Link>
+          </div>
         </aside>
+        <nav aria-label="Find plumbers by area and service" className="mt-8 grid gap-6 sm:grid-cols-2">
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Plumbers by area</h2>
+            <ul className="mt-3 space-y-2 text-sm">{REGIONS.map((r) => <li key={r.slug}><Link href={`/plumbers/${r.slug}`} className="font-semibold text-brand hover:underline">Plumbers in {r.shortName}</Link></li>)}</ul>
+          </div>
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Plumbers by service</h2>
+            <ul className="mt-3 space-y-2 text-sm">{SERVICE_GUIDES.map((s) => <li key={s.slug}><Link href={`/services/${s.slug}`} className="font-semibold text-brand hover:underline">{s.name}</Link></li>)}</ul>
+          </div>
+        </nav>
       </article>
 
       {related.length > 0 && (

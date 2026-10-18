@@ -1,3 +1,4 @@
+import { profileSummary, serviceGuidance } from "@/lib/profile-enrichment";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -60,6 +61,7 @@ export default async function PlumberPage({ params }: { params: Promise<{ id: st
 
   const state = getVerificationState(plumber);
   const profileAbout = usableProfileAbout(plumber.about);
+  const serviceQuestions = serviceGuidance(plumber.specialties).slice(0, 5);
   const stateDate = state === "credential_verified" ? formattedVerificationDate(plumber.credential_verified_at) : null;
   const takingWork = isTakingWork(plumber);
   const profilePhoto = plumber.photos?.find((photo: { is_profile_photo: boolean }) => photo.is_profile_photo)?.photo_url ?? null;
@@ -187,12 +189,50 @@ export default async function PlumberPage({ params }: { params: Promise<{ id: st
           {profileAbout ? (
             <Panel title="About this business"><p className="overflow-wrap-anywhere whitespace-pre-line text-sm leading-relaxed text-slate-700">{profileAbout}</p></Panel>
           ) : (
-            <Panel title="About this business"><p className="text-sm leading-relaxed text-slate-600">A usable business description is not currently displayed. Use the listed services and trust state, then confirm the job details directly.</p></Panel>
+            <Panel title="About this business"><p className="text-sm leading-relaxed text-slate-700">{profileSummary(plumber)}</p><p className="mt-3 text-xs text-slate-500">Directory summary based on recorded fields—not a description supplied by the business.</p></Panel>
+          )}
+
+          {related.length > 0 && (
+            <a href="#compare" className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-800 hover:border-brand">
+              <span>Comparing options? See {related.length} other plumber{related.length === 1 ? "" : "s"} in {plumber.area}</span>
+              <span className="text-brand">View ↓</span>
+            </a>
           )}
 
           <Panel title="Listed services">
             {plumber.specialties?.length ? <div className="flex flex-wrap gap-2">{plumber.specialties.map((service: string) => <span key={service} className="rounded-lg bg-blue-50 px-3 py-1.5 text-sm font-bold text-brand">{service}</span>)}</div> : <p className="text-sm text-slate-600">No services have been confirmed on this profile.</p>}
           </Panel>
+
+          {serviceQuestions.length > 0 && (
+            <Panel title={`Planning a job with ${plumber.trading_name}`}>
+              <p className="mb-4 text-sm text-slate-600">These are questions to discuss before booking—not claims about this business's prices, equipment or coverage.</p>
+              <div className="space-y-4">
+                {serviceQuestions.map((item) => (
+                  <section key={item.label}>
+                    <h3 className="font-semibold text-slate-950">{item.label}</h3>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-relaxed text-slate-700">
+                      {item.questions.map((question) => <li key={question}>{question}</li>)}
+                    </ul>
+                    {item.guidePath && <Link href={item.guidePath} className="mt-2 inline-block text-sm font-semibold text-brand hover:underline">Compare listings for {item.label.toLowerCase()} →</Link>}
+                  </section>
+                ))}
+              </div>
+            </Panel>
+          )}
+
+          {region && (
+            <Panel title={`Compare plumbers in ${region.name}`}>
+              <p className="text-sm leading-relaxed text-slate-700">This record is listed under {plumber.area}. For work at your address, confirm travel coverage, arrival time and call-out charges with the business. If you are comparing quotes, browse other listings in this directory area.</p>
+              <Link href={`/plumbers/${region.slug}`} className="mt-3 inline-block text-sm font-semibold text-brand hover:underline">Browse {region.name} listings →</Link>
+            </Panel>
+          )}
+
+          {!profileAbout && (
+            <Panel title="Help make this profile more useful">
+              <p className="text-sm leading-relaxed text-slate-600">If you run this business, add your own description, the work you handle, current contact details and photos you have permission to publish. Real business information helps customers compare providers; an indexing outcome is not guaranteed.</p>
+              <Link href={plumber.profile_id ? "/dashboard/profile" : `/claim/${plumber.slug ?? plumber.id}`} className="btn-secondary mt-3">{plumber.profile_id ? "Update your business profile" : "Claim and complete this profile"}</Link>
+            </Panel>
+          )}
 
           {labelsResult.status === "rejected" && <p role="alert" className="text-sm text-red-700">Public credential labels could not be loaded. No credential status is inferred from that error.</p>}
 
@@ -239,6 +279,13 @@ export default async function PlumberPage({ params }: { params: Promise<{ id: st
 
         <aside className="space-y-5">
           <section id="book" className="panel lg:sticky lg:top-24">
+            {!plumber.profile_id && (
+              <div className="mb-5 rounded-xl border border-green-200 bg-green-50 p-4">
+                <p className="font-semibold text-slate-950">Want more than one quote?</p>
+                <p className="mt-1 text-sm text-slate-600">Get a free price estimate and choose up to 3 reviewed plumbers in {plumber.area} to quote.</p>
+                <Link href={`/get-estimate${normaliseAreaKey(plumber.area) ? `?area=${normaliseAreaKey(plumber.area)}` : ""}`} className="btn mt-3 w-full bg-green-600 text-white hover:bg-green-700">Get a free estimate</Link>
+              </div>
+            )}
             {plumber.profile_id && (
               <div className="mb-5 rounded-xl border-2 border-green-200 bg-green-50 p-4">
                 <h2 className="font-display text-xl font-bold text-slate-950">Get a free estimate from {plumber.trading_name}</h2>
@@ -270,7 +317,7 @@ export default async function PlumberPage({ params }: { params: Promise<{ id: st
       {relatedResult.status === "rejected" && <p role="alert" className="mx-auto max-w-7xl px-4 py-6 text-sm text-red-700 sm:px-6">Alternative directory records could not be loaded just now.</p>}
 
       {related.length > 0 && (
-        <section className="border-t border-slate-200 bg-white px-4 py-12 sm:px-6">
+        <section id="compare" className="scroll-mt-24 border-t border-slate-200 bg-white px-4 py-12 sm:px-6">
           <div className="mx-auto max-w-7xl">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-brand">Compare alternatives</p><h2 className="mt-2 font-display text-3xl font-bold text-slate-950">More records in {plumber.area}</h2></div>{region && <Link href={`/plumbers/${region.slug}`} className="text-sm font-bold text-brand hover:underline">View the regional collection</Link>}</div>
             <div className="mt-7 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{related.map((item, index) => <PlumberCard key={item.id} plumber={item} sourcePage="related_profiles" rankPosition={index + 1} />)}</div>
