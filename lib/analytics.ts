@@ -1,5 +1,6 @@
 import { DIRECTORY_AREAS, DIRECTORY_SERVICES } from "@/lib/directory";
 import { KZN_AREAS, SPECIALTIES } from "@/lib/utils";
+import { trackOutcome } from "@/lib/outcome-events";
 
 export type AnalyticsEvent = "search_submit" | "filter_apply" | "profile_view" | "whatsapp_click" | "call_click" | "booking_submit" | "booking_complete" | "claim_complete";
 type EventParameters = Record<string, string | number | boolean | null | undefined>;
@@ -65,7 +66,14 @@ export function sanitiseAnalyticsParameters(parameters: EventParameters): EventP
 }
 
 export function trackEvent(name: AnalyticsEvent, parameters: EventParameters = {}) {
-  if (typeof window === "undefined" || !canTrackAnalytics()) return;
+  if (typeof window === "undefined") return;
+  // Cookieless outcome count in Vercel Analytics, sent regardless of the GA consent choice.
+  const vercelName = name === "call_click" ? "call_click" : name === "whatsapp_click" ? "whatsapp_click" : name === "booking_submit" ? "quote_click" : null;
+  if (vercelName) {
+    const area = typeof parameters.area === "string" ? parameters.area : undefined;
+    trackOutcome(vercelName, { area });
+  }
+  if (!canTrackAnalytics()) return;
   const clean = sanitiseAnalyticsParameters(parameters);
   const sourcePath = analyticsSourcePath(window.location.pathname);
   // Override automatic GA page defaults for each explicitly emitted event.

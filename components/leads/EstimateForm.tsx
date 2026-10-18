@@ -15,6 +15,7 @@ import {
   getLeadService,
 } from "@/lib/leads";
 import { isValidSAPhone } from "@/lib/utils";
+import { trackOutcome } from "@/lib/outcome-events";
 
 type PlumberCard = {
   id: string; trading_name: string; slug: string | null; area: string; photo_url: string | null;
@@ -151,7 +152,15 @@ export function EstimateForm() {
     return true;
   }
 
-  function next() { if (validateStep(step)) go(step + 1); }
+  const startedTracked = useRef(false);
+  function next() {
+    if (!validateStep(step)) return;
+    if (step === 0 && !startedTracked.current) {
+      startedTracked.current = true;
+      trackOutcome("estimate_started", { page: "estimate", area: areaKey, service: serviceKey, plumber: requested ? "claimed" : undefined });
+    }
+    go(step + 1);
+  }
 
   async function addPhotos(list: FileList | null) {
     if (!list) return;
@@ -187,6 +196,7 @@ export function EstimateForm() {
       const res = await fetch("/api/leads", { method: "POST", body });
       const result = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(result.error || "Your request could not be sent. Please try again.");
+      if (!result.duplicate) trackOutcome("estimate_completed", { page: "estimate", area: areaKey, service: serviceKey });
       router.push(`/get-estimate/received?ref=${encodeURIComponent(result.ref)}&t=${encodeURIComponent(result.token)}${result.duplicate ? "&dup=1" : ""}`);
     } catch (err) {
       setError((err as Error).message);

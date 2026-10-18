@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { CheckCircle2, Loader2, MessageCircle, Users } from "lucide-react";
 import { formatEstimate, getLeadUrgency, leadWhatsAppMessage, leadWhatsAppUrl } from "@/lib/leads";
+import { trackOutcome } from "@/lib/outcome-events";
 
 type Received = {
   ref: string; first_name: string; service_label: string; suburb: string; area_label: string; urgency: string;
@@ -104,7 +105,7 @@ export function LeadReceived() {
             href={waUrl}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={() => track("whatsapp_cta_clicked")}
+            onClick={() => { track("whatsapp_cta_clicked"); trackOutcome("kzn_whatsapp_click", { page: "estimate" }); }}
             className="btn-whatsapp mt-4 w-full py-3.5 text-base"
           >
             <MessageCircle className="h-5 w-5" /> Message KZNPlumbers About My Request
