@@ -1,5 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
+import { after } from "next/server";
+import { sendLeadToGhl } from "@/lib/ghl";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -194,6 +196,8 @@ export async function POST(request: NextRequest) {
       jobs.push(sendEmail([input.email], mail.subject, mail.html));
     }
     await Promise.allSettled(jobs);
+    // GoHighLevel follow-up runs after the response so the homeowner never waits for it.
+    after(() => sendLeadToGhl(lead.id, "lead_created"));
 
     return privateJson({ ref: lead.ref, token }, 201);
   } catch (error) { return accessFailure(error); }

@@ -60,7 +60,7 @@ export default function PrivacyPage() {
         <h2>4. How We Share Your Information</h2>
         <p>We do not sell your personal information to third parties. We may share information with:</p>
         <ul>
-          <li><strong>Service providers:</strong> Supabase (database hosting), Vercel (website hosting), Resend (email delivery), Google (analytics and reviews API). These providers process data on our behalf under their own privacy policies.</li>
+          <li><strong>Service providers:</strong> Supabase (database hosting), Vercel (website hosting), Resend (email delivery), GoHighLevel (customer messaging and quote-request follow-ups), Google (analytics and reviews API). These providers process data on our behalf under their own privacy policies.</li>
           <li><strong>Public display:</strong> Plumber profiles can show the trading name, area, listed services, ratings, work photos, trust state, and credential identifiers or labels. Private evidence files are not published as general downloads.</li>
           <li><strong>Legal requirements:</strong> We may disclose information if required by law or to protect our rights.</li>
         </ul>
@@ -72,7 +72,7 @@ export default function PrivacyPage() {
           <li><strong>Photos</strong> are stored privately and only shown to KZNPlumbers staff and the plumbers on your job, through links that expire.</li>
           <li><strong>Why:</strong> to give you an indicative price, connect you with a plumber, follow up on whether you were helped, and prevent spam. The estimate is indicative only and is not a quotation.</li>
           <li><strong>Marketing:</strong> we only send tips or offers if you ticked the optional marketing box. You can opt out at any time.</li>
-          <li><strong>Our tools:</strong> requests are stored with Supabase and emailed through Resend. If we connect a customer-relationship tool for messages and follow-ups, it will process your details on our behalf.</li>
+          <li><strong>Our tools:</strong> requests are stored with Supabase and emailed through Resend. Your name, contact details and job details are also sent to GoHighLevel, our customer-messaging tool, so we can send you updates about your request and check whether a plumber helped you. GoHighLevel may store data outside South Africa and processes it only on our behalf. The plumbers on your job are shared with GoHighLevel so we can remind them to respond. Reply STOP to any follow-up message to stop them.</li>
           <li><strong>How long:</strong> we keep quote requests for up to 24 months so we can handle complaints and measure plumber response, then delete or anonymise them. Ask us to delete yours sooner at any time.</li>
         </ul>
 

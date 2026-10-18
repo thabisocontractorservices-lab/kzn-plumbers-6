@@ -1,4 +1,5 @@
-import { NextRequest } from "next/server";
+import { NextRequest, after } from "next/server";
+import { sendLeadToGhl, type GhlEvent } from "@/lib/ghl";
 import { z } from "zod";
 import { accessFailure, privateJson, requireSameOrigin } from "@/lib/server-access";
 import { readAuthFlowJson } from "@/lib/auth-flow-input";
@@ -20,6 +21,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       await admin.from("lead_assignments").update({ status: "viewed", viewed_at: new Date().toISOString() }).eq("id", id);
       await logLeadActivity({ lead_id: lead.id, assignment_id: id, plumber_id: plumber.id, actor: "plumber", actor_id: user.id, event: "plumber_viewed", detail: { plumber: plumber.trading_name } });
       assignment.status = "viewed";
+      after(() => sendLeadToGhl(lead.id, "plumber_viewed", { plumberId: plumber.id }));
     }
     const photos = await signedPhotoUrls(lead.photo_paths);
     const { id: _leadId, photo_paths: _p, ...safe } = lead;
@@ -72,6 +74,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const nextLead = rollUpLeadStatus(lead.status as LeadStatus, NEXT_STATUS[action]);
     if (nextLead !== lead.status) await admin.from("leads").update({ status: nextLead }).eq("id", lead.id);
     await logLeadActivity({ lead_id: lead.id, assignment_id: id, plumber_id: plumber.id, actor: "plumber", actor_id: user.id, event: EVENT[action], detail: { plumber: plumber.trading_name, job_value, reason } });
+
+    after(() => sendLeadToGhl(lead.id, EVENT[action] as GhlEvent, { plumberId: plumber.id, extra: job_value != null ? { job_value } : {} }));
 
     // Declines: tell admin so the homeowner isn't left waiting.
     if (action === "decline") {

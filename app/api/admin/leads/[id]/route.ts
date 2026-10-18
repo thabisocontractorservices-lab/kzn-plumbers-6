@@ -1,4 +1,5 @@
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
+import { ghlEnabled, sendLeadToGhl } from "@/lib/ghl";
 import { z } from "zod";
 import { AccessError, accessFailure, privateJson, requireAdmin, requireSameOrigin } from "@/lib/server-access";
 import { readAuthFlowJson } from "@/lib/auth-flow-input";
@@ -47,6 +48,7 @@ const Action = z.discriminatedUnion("action", [
   z.object({ action: z.literal("resend"), assignment_id: z.string().uuid() }),
   z.object({ action: z.literal("set_status"), status: z.enum(LEAD_STATUSES) }),
   z.object({ action: z.literal("set_assignment_status"), assignment_id: z.string().uuid(), status: z.enum(["offered", "notified", "viewed", "accepted", "declined", "expired", "contacted", "quoted", "won", "lost"]), job_value: z.number().min(0).optional() }),
+  z.object({ action: z.literal("ghl_resend") }),
   z.object({ action: z.literal("note"), note: z.string().trim().min(1).max(2000) }),
   z.object({ action: z.literal("toggle_tag"), tag: z.enum(["customer_confirmed", "whatsapp_opened", "high_value", "spam_suspected", "called_by_admin"]) }),
   z.object({ action: z.literal("edit"), fields: z.object({
@@ -93,11 +95,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         if (["new", "qualified", "matched", "no_plumber", "expired"].includes(lead.status)) await admin.from("leads").update({ status: "sent" }).eq("id", id);
         await log("plumber_assigned", { plumber: p.data.trading_name }, { plumber_id: input.plumber_id, assignment_id: assignmentId });
         const sent = input.notify ? await notifyAssignment(summary, assignmentId!, input.plumber_id, "admin") : false;
+        after(() => sendLeadToGhl(id, "plumber_assigned", { plumberId: input.plumber_id }));
         return privateJson({ ok: true, message: `${p.data.trading_name} assigned${input.notify ? (sent ? " and emailed." : " — email could not be sent (no email on their account or email not set up). Send them the job link manually.") : "."}` });
       }
       case "remove_assignment": {
         await admin.from("lead_assignments").update({ status: "removed" }).eq("id", input.assignment_id).eq("lead_id", id);
         await log("plumber_removed", {}, { assignment_id: input.assignment_id });
+        after(() => sendLeadToGhl(id, "plumber_removed"));
         return privateJson({ ok: true, message: "Plumber removed from this lead." });
       }
       case "resend": {
@@ -108,6 +112,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
       case "set_status": {
         await admin.from("leads").update({ status: input.status }).eq("id", id);
+        after(() => sendLeadToGhl(id, "status_changed"));
         await log(input.status === "new" && ["invalid", "duplicate", "lost", "expired"].includes(lead.status) ? "lead_reopened" : "status_changed", { from: lead.status, to: input.status });
         return privateJson({ ok: true, message: "Status updated." });
       }
@@ -116,7 +121,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         if (input.job_value != null) patch.job_value = input.job_value;
         await admin.from("lead_assignments").update(patch).eq("id", input.assignment_id).eq("lead_id", id);
         await log("assignment_status_changed", { to: input.status, job_value: input.job_value }, { assignment_id: input.assignment_id });
+        after(async () => {
+          const a = await admin.from("lead_assignments").select("plumber_id").eq("id", input.assignment_id).maybeSingle();
+          await sendLeadToGhl(id, "assignment_status_changed", { plumberId: (a.data?.plumber_id as string | undefined) ?? null });
+        });
         return privateJson({ ok: true, message: "Plumber status updated." });
+      }
+      case "ghl_resend": {
+        if (!ghlEnabled()) throw new AccessError("GoHighLevel is not connected yet. Add GHL_API_TOKEN and GHL_LOCATION_ID in Vercel → Settings → Environment Variables, then redeploy.", 409);
+        const ok = await sendLeadToGhl(id, "resend");
+        return privateJson({ ok, message: ok ? "Sent to GoHighLevel." : "GoHighLevel did not accept it. Open the activity log below: the “ghl failed” entry shows the reason." });
       }
       case "note": {
         const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
