@@ -307,6 +307,16 @@ function LeadDrawer({ id, onClose, onChanged }: { id: string; onClose: () => voi
                 </div>
                 <p className="mt-1 text-[11px] text-gray-400">“whatsapp opened” means they tapped the button — not proof they sent a message. Add “customer confirmed” after chatting.</p>
               </div>
+              <div>
+                <h3 className="mb-1 font-bold">GoHighLevel</h3>
+                {(() => {
+                  const ghlTags: Record<string, string> = { not_contacted: "Homeowner: not contacted", job_not_done: "Homeowner: job not done", job_completed_confirmed: "Homeowner: job done", homeowner_cancelled: "Homeowner: cancelled" };
+                  const shown = (l.quality_tags ?? []).filter((t: string) => ghlTags[t]);
+                  return shown.length ? <div className="mb-2 flex flex-wrap gap-1.5">{shown.map((t: string) => <span key={t} className={`rounded-full px-2.5 py-1 text-xs font-semibold ${t === "job_completed_confirmed" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>{ghlTags[t]}</span>)}</div> : null;
+                })()}
+                <button disabled={busy} onClick={() => act({ action: "ghl_resend" })} className="btn-secondary px-2.5 py-1 text-xs">Send to GoHighLevel again</button>
+                <p className="mt-1 text-[11px] text-gray-400">New leads and status changes are sent automatically. Use this if the activity log shows “ghl failed”.</p>
+              </div>
             </section>
 
             <section>

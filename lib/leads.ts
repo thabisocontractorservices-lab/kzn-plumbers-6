@@ -231,4 +231,4 @@ export function leadWhatsAppUrl(message: string, number = KZN_WHATSAPP_NUMBER): 
 }
 
 export const CONSENT_TEXT =
-  "I agree that KZNPlumbers may store my request and share my details with the plumbers I chose (or that KZNPlumbers selects for me) so they can contact me about this job. See the Privacy Policy.";
+  "I agree that KZNPlumbers may store my request, share my details with the plumbers I chose (or that KZNPlumbers selects for me) so they can contact me about this job, and send me updates and follow-up messages about this job by WhatsApp, SMS or email. See the Privacy Policy.";
