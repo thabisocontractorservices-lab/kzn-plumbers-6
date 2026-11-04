@@ -8,7 +8,8 @@ import { realPastDate } from "@/lib/directory-seo";
 import { getPublicPlumbers } from "@/lib/directory-data";
 import { guideAreaMatch } from "@/lib/regions";
 import { sanitizeEditorialHtml } from "@/lib/sanitize";
-import { SERVICE_GUIDES } from "@/lib/services";
+import { SERVICE_GUIDES, getServiceGuide } from "@/lib/services";
+import { safeLegacyLanding } from "@/lib/legacy-landing";
 import { absoluteUrl, SITE_NAME } from "@/lib/site";
 import { getSeoPage as getPage, editorialIndexable, approvedEditorialDisposition } from "@/lib/directory-editorial";
 import { redirectIfMoved } from "@/lib/redirects";
@@ -21,15 +22,18 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   if (!page) return { title: "Page not found | KZN Plumbers", robots: { index: false, follow: true } };
 
   const nonIndexable = !editorialIndexable(page);
+  const landing = safeLegacyLanding(page);
+  const title = landing?.title ?? page.meta_title;
+  const description = landing?.description ?? page.meta_description;
   const canonical = `/${slug}`;
   return {
-    title: page.meta_title,
-    description: page.meta_description,
+    title,
+    description,
     alternates: { canonical },
     robots: nonIndexable ? { index: false, follow: true } : { index: true, follow: true },
     openGraph: {
-      title: page.meta_title,
-      description: page.meta_description,
+      title,
+      description,
       type: "article",
       url: absoluteUrl(canonical),
       siteName: SITE_NAME,
@@ -52,9 +56,12 @@ export default async function SeoContentPage({ params }: { params: Promise<{ slu
 
   // No automatic redirects from unvalidated database targets. Existing URLs remain stable.
   if (approvedEditorialDisposition(page) === "remove") notFound();
+  const landing = safeLegacyLanding(page);
+  const heading = landing?.heading ?? page.h1;
+  const description = landing?.description ?? page.meta_description;
   const areaMatch = guideAreaMatch(page.city_focus);
   const region = areaMatch?.region ?? null;
-  const service = findService(page.group_name, page.h1);
+  const service = landing ? (landing.serviceSlug ? getServiceGuide(landing.serviceSlug) : null) : findService(page.group_name, page.h1);
   const providerResult = areaMatch ? await getPublicPlumbers({
     areas: areaMatch.areas, specialty: service?.specialty, limit: 6,
   }) : null;
@@ -67,11 +74,11 @@ export default async function SeoContentPage({ params }: { params: Promise<{ slu
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Article",
-    headline: page.h1,
-    description: page.meta_description,
+    headline: heading,
+    description,
     mainEntityOfPage: absoluteUrl(canonical),
     publisher: { "@type": "Organization", name: SITE_NAME, url: absoluteUrl("/") },
-    ...(updated && !Number.isNaN(updated.getTime()) ? { dateModified: updated.toISOString() } : {}),
+    ...(updated && !landing && !Number.isNaN(updated.getTime()) ? { dateModified: updated.toISOString() } : {}),
   };
 
   return (
@@ -87,9 +94,9 @@ export default async function SeoContentPage({ params }: { params: Promise<{ slu
               <span>{page.group_name || "Plumbing guide"}</span>
             </nav>
             <p className="mt-7 text-xs font-bold uppercase tracking-[0.16em] text-sky-300">KZN homeowner guide</p>
-            <h1 className="mt-3 max-w-4xl font-display text-4xl font-bold leading-tight sm:text-5xl">{page.h1}</h1>
-            <p className="mt-5 max-w-3xl text-base leading-relaxed text-slate-200">{page.meta_description}</p>
-            {updated && !Number.isNaN(updated.getTime()) && (
+            <h1 className="mt-3 max-w-4xl font-display text-4xl font-bold leading-tight sm:text-5xl">{heading}</h1>
+            <p className="mt-5 max-w-3xl text-base leading-relaxed text-slate-200">{description}</p>
+            {!landing && updated && !Number.isNaN(updated.getTime()) && (
               <p className="mt-4 flex items-center gap-2 text-xs text-slate-400"><CalendarDays className="h-4 w-4" /> Updated {updated.toLocaleDateString("en-ZA", { year: "numeric", month: "long", day: "numeric" })}</p>
             )}
           </div>
@@ -117,10 +124,21 @@ export default async function SeoContentPage({ params }: { params: Promise<{ slu
           </section>
         )}
 
+        {areaMatch && plumbers.length === 0 && <p className="mx-auto max-w-5xl px-4 pt-8 text-sm text-slate-600 sm:px-6">No matching directory records were found for these criteria. <Link href="/" className="font-semibold text-brand underline">Browse the directory</Link> and confirm services and coverage directly with the business.</p>}
+
         {!areaMatch && <p className="mx-auto max-w-5xl px-4 pt-8 text-sm text-slate-600 sm:px-6">This guide does not have a town that can be matched narrowly to existing directory area labels. No broad KZN provider set is presented as local coverage. <Link href="/" className="font-semibold text-brand underline">Choose an area in the directory</Link>.</p>}
 
         <div className="mx-auto grid max-w-5xl gap-10 px-4 py-10 sm:px-6 sm:py-14 lg:grid-cols-[minmax(0,1fr)_260px]">
-          <div className="seo-content" dangerouslySetInnerHTML={{ __html: body }} />
+          {landing ? (
+            <div className="seo-content">
+              <h2>How to compare your options</h2>
+              <p>Directory records may be unclaimed, claimed by a business, or have a checked credential. Publication is not an endorsement or a guarantee of availability. Check each profile's label and confirm the details directly.</p>
+              <ul>{landing.advice.map((item) => <li key={item}>{item}</li>)}</ul>
+              <h2>Before arranging the work</h2>
+              <p>Confirm that the business serves your address and handles your specific job. Ask about arrival times, call-out charges and any required registration or documentation. Reviews and contact methods are shown only where recorded.</p>
+              <p><Link href="/trust">Read how verification works</Link> or <Link href="/get-estimate">request a free estimate</Link>.</p>
+            </div>
+          ) : <div className="seo-content" dangerouslySetInnerHTML={{ __html: body }} />}
           <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
             {(region || service) && (
               <div className="rounded-xl border border-slate-200 bg-white p-5">
